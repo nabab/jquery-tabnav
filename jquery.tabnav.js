@@ -80,12 +80,15 @@
           $$.list[idx].callonce(idx, $$.list[idx]);
           $$.list[idx].callonce = false;
         }
-        $$.resize();
         // If there is a callback attached to this index we execute it
         if ( $$.list[idx].callback && !$$.list[idx].disabled ){
           $$.list[idx].callback(cont, $$.list[idx], idx);
           $$.resize();
         }
+        else{
+          $$.resize();
+        }
+        $tab.trigger("resize");
 
         // Looking for another tabNav widget inside this one
         subtab = $cont.find("div." + $$.widgetFullName + ":first");
@@ -172,8 +175,13 @@
           if ( after ) {
             after(cfg, idx);
           }
-          if ( !non_activate && (idx === $$.options.selected) && $$.list.length ){
-            $$.activate($$.list[idx] ? idx : idx-1, 1);
+          if ( !non_activate && $$.list.length ){
+            if ( idx < $$.options.selected ){
+              $$.options.selected--;
+            }
+            else if ( idx === $$.options.selected ) {
+              $$.activate($$.list[idx] ? idx : idx - 1, 1);
+            }
           }
         }
       }
@@ -332,11 +340,17 @@
       return this;
     },
 
+    reload: function(idx){
+      var $$ = this;
+      $$.close(idx);
+      appui.f.link(idx, 1);
+    },
+
     reset: function(idx, with_title){
       var $$ = this,
         o = $$.options;
       idx = $$.getIdx(idx);
-      if ( idx > -1 ){
+      if ( idx !== false ) {
         $$.setContent(" ", idx);
         if ( with_title ) {
           $$.setTitle(" ", idx);
@@ -480,7 +494,7 @@
         o = $$.options,
         r, $tab, menu = 1, newIdx;
       // Sinon on rajoute un tab
-      // Si idx n'est pas défini, ce sera le dernier tab
+      // Si idx n'est pas dï¿½fini, ce sera le dernier tab
       if ( obj.url ) {
         if ((newIdx = $$.search(obj.url)) !== -1) {
           for (var k in obj) {
@@ -529,10 +543,8 @@
               obj.menu = [{
                 text: appui.l.reload,
                 fn: function(i, ob){
-                  $$.close(ob.url);
-                  appui.f.link(ob.current ? ob.current : ob.url, 1);
+                  $$.reload(ob.current ? ob.current : ob.url);
                 }
-
               }];
             }
           }
@@ -665,9 +677,9 @@
         delete obj.html;
       }
       if ( obj.old_path !== undefined ){
-        var idx = $$.search(obj.old_path);
-        if ( idx > -1 ){
-          $$.list[idx].url = obj.url;
+        var i = $$.search(obj.old_path);
+        if ( i > -1 ){
+          $$.list[i].url = obj.url;
         }
       }
       if ( obj.url ){
