@@ -9,7 +9,8 @@
       baseURL: '',
       scrollable: false,
       baseTitle: '',
-      selected: -1
+      selected: -1,
+      current: ''
     },
 
     // Makes the instance, initializes the list
@@ -50,21 +51,30 @@
     activateDefault: function(){
     },
 
-    // This function is the callback after activating a tab, but can also be used to activate a given tab
+    // This function is the callback after activating a tab, but activates a given tab if not already
     activate: function(idx, force){
+      appui.f.log("IDX", idx)
       var tmp = this.getIdx(idx);
       if ( (tmp !== false) && (force || (idx !== this.options.selected)) ){
         var $$ = this,
           o = $$.options,
-          original = typeof(idx) === 'string' ? idx : ($$.list[tmp].current ? $$.list[tmp].current : appui.v.path),
+          // Is either the requested url or the current one
+          original = (typeof(idx) === 'string') && idx ? idx : ($$.list[tmp].current ? $$.list[tmp].current : $$.list[tmp].url),
+          // Numeric index
           idx = tmp,
+          // actual tab
           tab = $$.getTab(idx),
+          // Container
           cont = $$.getContainer(idx),
+          // jQuery objects
           $cont = $(cont),
           $tab = $(tab),
+          // Set to true the URL will be replaced instead of added (address correction)
           rep = false,
+          // A subtab element if exists
           subtab,
           data = {},
+          // Numeric index of the previously selected tab
           oldSelected = o.selected;
 
         // This is the only moment where selected is set
@@ -96,8 +106,8 @@
         if ( subtab.length && subtab.tabNav("getLength") ){
           // It will activate the next tabNav and so on
           // if current URL longer than this tab's URL, use the diff to activate the lower tabnav
-          if ( (original.indexOf($$.list[idx].url) === 0) ){
-            subtab.tabNav("activate", original.substr($$.list[idx].url.length+1));
+          if ( (original.indexOf($$.list[idx].url + '/') === 0) ){
+            subtab.tabNav("activate", original.substr(($$.list[idx].url + '/').length));
           }
           // Otherwise activate the default one
           else{
@@ -106,7 +116,8 @@
         }
         // Until the very last tabNav which will be the one determining the final URL and executing appui.f.setNavigationVars
         else if ( (appui.v.path === o.baseURL + $$.list[idx].url) ||
-          (appui.v.path.indexOf(o.baseURL + $$.list[idx].url + '/') === -1) ){
+          (appui.v.path.indexOf(o.baseURL + $$.list[idx].url + '/') === -1)
+        ){
           $$.element.parents("." + $$.widgetFullName).each(function(){
             if ( $(this).tabNav("getURL") === appui.v.path ){
               rep = 1;
@@ -117,6 +128,8 @@
               return false;
             }
           });
+
+
           var url = o.baseURL + ( (
             typeof(original) === 'string' &&
             ($$.list[idx].url !== original) &&
@@ -125,7 +138,12 @@
           ) ? original : $$.list[idx].url );
           // This is the only moment where current is set
           $$.list[idx].current = url;
+          appui.f.log(url);
+          o.current = url;
           appui.f.setNavigationVars(url, o.baseTitle + $$.list[idx].title, data, rep);
+        }
+        else{
+          appui.f.log("FAIL: " + url, appui.v.path, o.baseURL, $$.list[idx].url, $$.list[idx].current);
         }
 
         // Change tab color if defined
@@ -340,10 +358,12 @@
       return this;
     },
 
-    reload: function(idx){
-      var $$ = this;
-      $$.close(idx);
-      appui.f.link(idx, 1);
+    reload: function(url){
+      var $$ = this,
+          idx = $$.getIdx(idx);
+      $$.reset(idx);
+      $($$.getContainer(idx)).empty();
+      appui.f.link(this.options.baseURL + url, 1);
     },
 
     reset: function(idx, with_title){
@@ -352,14 +372,10 @@
       idx = $$.getIdx(idx);
       if ( idx !== false ) {
         $$.setContent(" ", idx);
+        $$.list[idx] = {url: $$.list[idx].url, title: $$.list[idx].title};
         if ( with_title ) {
           $$.setTitle(" ", idx);
         }
-        $$.setData({}, idx);
-        delete $$.list[idx].callonce;
-        delete $$.list[idx].callback;
-        delete $$.list[idx].close;
-        delete $$.list[idx].afterClose;
       }
     },
 
@@ -506,7 +522,9 @@
             }
             else if (k === 'data') {
               $$.setData(obj[k], newIdx);
-              $$.setData(obj[k], newIdx);
+            }
+            else{
+              $$.list[newIdx][k] = obj[k];
             }
           }
         }
@@ -630,7 +648,7 @@
           o = $$.options,
           w,
           tab = $$.element.children("div.k-content.k-state-active:first"),
-          subtab = tab.find("div[data-role=tabstrip]:first"),
+          subtab = tab.find("div." + $$.widgetFullName + ":first"),
           subtabs = subtab.children("ul").children("li"),
           containerHeight = $$.element.parent().hasClass("k-tabstrip-wrapper") ? $$.element.parent().parent().height() : $$.element.parent().height(),
           titleHeight = parseInt($$.element.children("ul").outerHeight(true)),
@@ -676,15 +694,15 @@
         obj.content = obj.html;
         delete obj.html;
       }
-      if ( obj.old_path !== undefined ){
-        var i = $$.search(obj.old_path);
-        if ( i > -1 ){
-          $$.list[i].url = obj.url;
+      if ( obj.url ) {
+        if ( obj.old_path !== undefined ){
+          var i = $$.search(obj.old_path);
+          if ( i > -1 ){
+            $$.list[i].url = obj.url;
+          }
         }
-      }
-      if ( obj.url ){
         $$.add(obj);
-        return $$.activate(obj.old_path && (obj.old_path.indexOf(obj.url) === 0) ? obj.old_path : obj.url);
+        return $$.activate(obj.old_path && (obj.old_path.indexOf(obj.url) === 0) ? obj.old_path : obj.url, 1);
       }
     }
   });
