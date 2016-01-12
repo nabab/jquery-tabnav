@@ -8,6 +8,7 @@
       list: [],
       baseURL: '',
       scrollable: false,
+      tabPosition: "top",
       baseTitle: '',
       selected: -1,
       current: ''
@@ -27,7 +28,8 @@
       }
       $$.wid = $$.element.addClass(this.widgetFullName).kendoTabStrip({
         animation:false,
-        scrollable: o.scrollable,
+        scrollable: o.scrollable ? { distance: 300 } : false,
+        tabPosition: o.tabPosition,
         activate: function(e){
           var tab = $(e.item),
             m = tab.index();
@@ -53,7 +55,6 @@
 
     // This function is the callback after activating a tab, but activates a given tab if not already
     activate: function(idx, force){
-      appui.f.log("IDX", idx)
       var tmp = this.getIdx(idx);
       if ( (tmp !== false) && (force || (idx !== this.options.selected)) ){
         var $$ = this,
@@ -362,7 +363,6 @@
       var $$ = this,
           idx = $$.getIdx(idx);
       $$.reset(idx);
-      $($$.getContainer(idx)).empty();
       appui.f.link(this.options.baseURL + url, 1);
     },
 
