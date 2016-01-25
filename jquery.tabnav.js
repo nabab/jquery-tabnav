@@ -115,16 +115,16 @@
             subtab.tabNav("activate");
           }
         }
-        // Until the very last tabNav which will be the one determining the final URL and executing appui.f.setNavigationVars
-        else if ( (appui.v.path === o.baseURL + $$.list[idx].url) ||
-          (appui.v.path.indexOf(o.baseURL + $$.list[idx].url + '/') === -1)
+        // Until the very last tabNav which will be the one determining the final URL and executing appui.fn.setNavigationVars
+        else if ( (appui.env.path === o.baseURL + $$.list[idx].url) ||
+          (appui.env.path.indexOf(o.baseURL + $$.list[idx].url + '/') === -1)
         ){
           $$.element.parents("." + $$.widgetFullName).each(function(){
-            if ( $(this).tabNav("getURL") === appui.v.path ){
+            if ( $(this).tabNav("getURL") === appui.env.path ){
               rep = 1;
               return false;
             }
-            if ( (appui.v.old_path === null) && ($(this).tabNav("getURL") !== appui.v.path) ){
+            if ( (appui.env.old_path === null) && ($(this).tabNav("getURL") !== appui.env.path) ){
               rep = 1;
               return false;
             }
@@ -139,12 +139,12 @@
           ) ? original : $$.list[idx].url );
           // This is the only moment where current is set
           $$.list[idx].current = url;
-          appui.f.log(url);
+          appui.fn.log(url);
           o.current = url;
-          appui.f.setNavigationVars(url, o.baseTitle + $$.list[idx].title, data, rep);
+          appui.fn.setNavigationVars(url, o.baseTitle + $$.list[idx].title, data, rep);
         }
         else{
-          appui.f.log("FAIL: " + url, appui.v.path, o.baseURL, $$.list[idx].url, $$.list[idx].current);
+          appui.fn.log("FAIL: " + url, appui.env.path, o.baseURL, $$.list[idx].url, $$.list[idx].current);
         }
 
         // Change tab color if defined
@@ -168,8 +168,8 @@
           }
         }
 
-        appui.v.ele = $$.getContainer(idx);
-        return appui.v.ele;
+        appui.env.ele = $$.getContainer(idx);
+        return appui.env.ele;
       }
     },
 
@@ -239,8 +239,8 @@
       if ( typeof(url) !== 'string' ){
         return false;
       }
-      if ( url.indexOf(appui.v.root) === 0 ){
-        url = url.substr(appui.v.root.length);
+      if ( url.indexOf(appui.env.root) === 0 ){
+        url = url.substr(appui.env.root.length);
       }
       var $$ = this,
         idxParent = $$.search(url),
@@ -363,7 +363,7 @@
       var $$ = this,
           idx = $$.getIdx(idx);
       $$.reset(idx);
-      appui.f.link(this.options.baseURL + url, 1);
+      appui.fn.link(this.options.baseURL + url, 1);
     },
 
     reset: function(idx, with_title){
@@ -445,8 +445,8 @@
       if ( typeof(url) !== 'string' ){
         return false;
       }
-      if ( url.indexOf(appui.v.root) === 0 ){
-        url = url.substr(appui.v.root.length);
+      if ( url.indexOf(appui.env.root) === 0 ){
+        url = url.substr(appui.env.root.length);
       }
 
       var $$ = this,
@@ -457,7 +457,7 @@
 
       // We look for at tab eith the same URL, full or partial
       while ( tmp !== '' ){
-        i = appui.f.search($$.list, "url", tmp);
+        i = appui.fn.search($$.list, "url", tmp);
         if ( i > -1 ){
           // If we find we give the index
           return i;
@@ -559,7 +559,7 @@
             );
             if ( obj.url && !obj.menu ) {
               obj.menu = [{
-                text: appui.l.reload,
+                text: appui.lng.reload,
                 fn: function(i, ob){
                   $$.reload(ob.current ? ob.current : ob.url);
                 }
