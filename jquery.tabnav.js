@@ -1,4 +1,7 @@
 (function($){
+  if ( !window.appui ){
+    alert("appui library is mandatory");
+  }
   $.widget("ui.tabNav", {
 
     // Options passable to the constructor
@@ -6,7 +9,6 @@
       closeClass: "fa fa-times-circle",
       menuClass: "fa fa-caret-down",
       list: [],
-      baseURL: '',
       scrollable: false,
       tabPosition: "top",
       baseTitle: '',
@@ -18,6 +20,25 @@
     _create: function(){
       var $$ = this,
         o = $$.options;
+      // The current URL of the tabNav is not yet set
+      $$.current = false;
+      // If set true activate will be triggered - always the first time
+      $$.changed = true;
+      $$.baseURL = '';
+      $$.parent = $$.element.parents("." + this.widgetFullName + ":first");
+      if ( !$$.parent.length ){
+        $$.parent = false;
+      }
+      else{
+        var tmp = $$.parent.tabNav("getURL", $$.element);
+        if ( tmp ){
+          tmp += '/';
+        }
+        else{
+          tmp = '';
+        }
+        $$.baseURL = tmp;
+      }
 
       // this.list is the current state of the list
       $$.list = [];
@@ -33,50 +54,117 @@
         activate: function(e){
           var tab = $(e.item),
             m = tab.index();
-          if ( $$.list[m] && (o.selected !== m) ){
-            $$.activate(m);
+          if ( $$.list[m] && ($$.getIdx() !== m) ){
+            $$.activate($$.list[m].current ? $$.list[m].current : $$.list[m].url);
           }
         }
       }).data("kendoTabStrip");
+
 
       // Creation of an initial tab configuration
       if ( $.isArray(o.list) ){
         $.each(o.list, function(i, v){
           $$.add(v);
         });
-        if ( (o.selected === -1) && $$.list.length ){
-          //$$.activate(0);
+        if ( o.current ){
+          $$.activate(o.current, true);
+        }
+        else if ( !appui.env.old_path ){
+          $$.activate();
         }
       }
+    },
+
+    getFullURL: function(){
+      return this.parent ? this.parent.tabNav("getFullURL") : (this.current ? this.current : '');
+    },
+
+    getBaseURL: function(){
+      return this.baseURL;
+    },
+
+    isChanged: function(){
+      if ( this.changed ){
+        return true;
+      }
+      if ( this.parent ){
+        return this.parent.tabNav("isChanged");
+      }
+      return false;
+    },
+
+    changeOK: function(){
+      this.changed = false;
+      if ( this.parent ){
+        this.parent.tabNav("changeOK");
+      }
+      return false;
+    },
+
+    parseURL: function(url){
+      var $$ = this;
+      if ( $$.baseURL && (url.indexOf($$.baseURL) === 0) ){
+        return url.substr($$.baseURL.length);
+      }
+      else if ( $$.baseURL === (url + '/') ){
+        return '';
+      }
+      return url;
     },
 
     activateDefault: function(){
     },
 
+    setCurrent: function(url){
+      var $$ = this;
+      if ( (idx = $$.getIdx(url)) === false ) {
+        url = '';
+      }
+      else{
+        $$.list[idx].current = url;
+      }
+      $$.current = url;
+      if ( $$.parent ){
+        $$.parent.tabNav("setCurrent", $$.baseURL + url);
+      }
+    },
+
     // This function is the callback after activating a tab, but activates a given tab if not already
     activate: function(idx, force){
-      var tmp = this.getIdx(idx);
+      var $$ = this,
+        o = $$.options,
+        tmp = this.getIdx(idx);
       if ( (tmp !== false) && (force || (idx !== this.options.selected)) ){
-        var $$ = this,
-          o = $$.options,
-          // Is either the requested url or the current one
-          original = (typeof(idx) === 'string') && idx ? idx : ($$.list[tmp].current ? $$.list[tmp].current : $$.list[tmp].url),
-          // Numeric index
+        // Is either the requested url or the target one
+        var original = (typeof(idx) === 'string') && idx ? $$.parseURL(idx) : ($$.list[tmp].current ? $$.list[tmp].current : $$.list[tmp].url),
+        // Numeric index
           idx = tmp,
-          // actual tab
+        // actual tab
           tab = $$.getTab(idx),
-          // Container
+        // Container
           cont = $$.getContainer(idx),
-          // jQuery objects
+        // jQuery objects
           $cont = $(cont),
           $tab = $(tab),
-          // Set to true the URL will be replaced instead of added (address correction)
+        // Set to true the URL will be replaced instead of added (address correction)
           rep = false,
-          // A subtab element if exists
+        // A subtab element if exists
           subtab,
-          data = {},
-          // Numeric index of the previously selected tab
-          oldSelected = o.selected;
+          data = $$.getData(idx),
+        // Numeric index of the previously selected tab
+          oldURL = $$.getFullURL(),
+          oldSelected = o.selected,
+          oldCurrent = $$.current;
+
+        if ( !original ){
+          original = $$.list[idx].url;
+        }
+        if ( oldCurrent !== original ){
+          $$.changed = true;
+        }
+        $$.setCurrent(original);
+
+        //appui.fn.log("-------------", this.element.attr("id") + '/' + ex, original, $$.getFullURL(), oldURL);
 
         // This is the only moment where selected is set
         o.selected = idx;
@@ -86,88 +174,63 @@
           $$.wid.activateTab($tab);
         }
 
-        // If there is a callonce attached to this index we execute it and delete it
-        if ( $$.list[idx].callonce ){
-          $$.list[idx].callonce(idx, $$.list[idx]);
-          $$.list[idx].callonce = false;
-        }
-        // If there is a callback attached to this index we execute it
-        if ( $$.list[idx].callback && !$$.list[idx].disabled ){
-          $$.list[idx].callback(cont, $$.list[idx], idx);
-          $$.resize();
-        }
-        else{
-          $$.resize();
-        }
-        $tab.trigger("resize");
-
-        // Looking for another tabNav widget inside this one
-        subtab = $cont.find("div." + $$.widgetFullName + ":first");
-
-        if ( subtab.length && subtab.tabNav("getLength") ){
-          // It will activate the next tabNav and so on
-          // if current URL longer than this tab's URL, use the diff to activate the lower tabnav
-          if ( (original.indexOf($$.list[idx].url + '/') === 0) ){
-            subtab.tabNav("activate", original.substr(($$.list[idx].url + '/').length));
+        // Only if either:
+        // - the tabNav has never been activated
+        // - the force parameter has been sent
+        // - the URL is different
+        // We really activate it
+        if ( force || $$.isChanged() ) {
+          // If there is a callonce attached to this index we execute it and delete it
+          if ($$.list[idx].callonce) {
+            $$.list[idx].callonce(cont, idx, $$.list[idx].data);
+            $$.list[idx].callonce = false;
           }
-          // Otherwise activate the default one
-          else{
-            subtab.tabNav("activate");
+          // If there is a callback attached to this index we execute it
+          if ($$.list[idx].callback && !$$.list[idx].disabled) {
+            $$.list[idx].callback(cont, idx, $$.list[idx].data);
+            $$.resize();
           }
-        }
-        // Until the very last tabNav which will be the one determining the final URL and executing appui.fn.setNavigationVars
-        else if ( (appui.env.path === o.baseURL + $$.list[idx].url) ||
-          (appui.env.path.indexOf(o.baseURL + $$.list[idx].url + '/') === -1)
-        ){
-          $$.element.parents("." + $$.widgetFullName).each(function(){
-            if ( $(this).tabNav("getURL") === appui.env.path ){
-              rep = 1;
-              return false;
-            }
-            if ( (appui.env.old_path === null) && ($(this).tabNav("getURL") !== appui.env.path) ){
-              rep = 1;
-              return false;
-            }
-          });
+          else {
+            $$.resize();
+          }
 
+          // Looking for another tabNav widget inside this one
+          subtab = $cont.find("div." + $$.widgetFullName + ":first");
 
-          var url = o.baseURL + ( (
-            typeof(original) === 'string' &&
-            ($$.list[idx].url !== original) &&
-            (original !== '') &&
-            (original.indexOf($$.list[idx].url) === 0)
-          ) ? original : $$.list[idx].url );
-          // This is the only moment where current is set
-          $$.list[idx].current = url;
-          appui.fn.log(url);
-          o.current = url;
-          appui.fn.setNavigationVars(url, o.baseTitle + $$.list[idx].title, data, rep);
-        }
-        else{
-          appui.fn.log("FAIL: " + url, appui.env.path, o.baseURL, $$.list[idx].url, $$.list[idx].current);
-        }
+          if (subtab.length && subtab.tabNav("getLength")) {
+            // It will activate the next tabNav and so on
+            // if current URL longer than this tab's URL, use the diff to activate the lower tabnav
+            subtab.tabNav("activate", original);
+          }
+          // Until the very last tabNav which will be the one determining the final URL and executing appui.fn.setNavigationVars
+          else {
+            $$.changeOK();
+            appui.fn.setNavigationVars($$.getFullURL(), o.baseTitle + $$.list[idx].title, data, rep);
+          }
 
-        // Change tab color if defined
-        if( $$.list[idx].bcolor ){
-          $($$.getTab(idx)).animate({backgroundColor: $$.list[idx].bcolor});
-          if ( $$.list[idx].url !== $$.getObs(oldSelected).url ) {
-            var tab = $($$.getTab(oldSelected)), col = tinycolor($$.getObs(oldSelected).bcolor);
-            for ( var i = 1; i < 100; i++ ){
-              col = col.lighten(i);
-              if ( col.getLuminance() > 0.7 ){
-                break;
+          // Change tab color if defined
+          if ($$.list[idx].bcolor) {
+            $($$.getTab(idx)).animate({backgroundColor: $$.list[idx].bcolor});
+            if ($$.list[idx].url !== $$.getObs(oldSelected).url) {
+              var tab = $($$.getTab(oldSelected)), col = tinycolor($$.getObs(oldSelected).bcolor);
+              for (var i = 1; i < 100; i++) {
+                col = col.lighten(i);
+                if (col.getLuminance() > 0.7) {
+                  break;
+                }
               }
+              tab.animate({backgroundColor: col.toHexString()});
             }
-            tab.animate({backgroundColor: col.toHexString()});
           }
-        }
-        if( $$.list[idx].fcolor ){
-          $($$.getTab(idx)).children().css("color", $$.list[idx].fcolor);
-          if ( $$.list[idx].url !== $$.getObs(oldSelected).url ) {
-            $($$.getTab(oldSelected)).children().animate({color:  tinycolor($$.getObs(oldSelected).fcolor).darken(80).toHexString()});
+          if ($$.list[idx].fcolor) {
+            $($$.getTab(idx)).children().css("color", $$.list[idx].fcolor);
+            if ($$.list[idx].url !== $$.getObs(oldSelected).url) {
+              $($$.getTab(oldSelected)).children().animate({color: tinycolor($$.getObs(oldSelected).fcolor).darken(80).toHexString()});
+            }
           }
         }
 
+        //appui.fn.log("------------", this.element.attr("id") + '/' + ex, $$.current, $$.list[idx].current, $$.list[idx].url, $$.baseURL);
         appui.env.ele = $$.getContainer(idx);
         return appui.env.ele;
       }
@@ -176,8 +239,8 @@
     close: function(idx, non_activate){
       if ( (idx = this.getIdx(idx)) !== false ){
         var $$ = this,
-            ok = 1,
-            cont = this.getContainer(idx);
+          ok = 1,
+          cont = this.getContainer(idx);
         if ( ($$.list[idx].close !== undefined) &&
           $.isFunction($$.list[idx].close) &&
           !$$.list[idx].close(cont, $$.list[idx], idx) ){
@@ -185,7 +248,7 @@
         }
         if ( ok ){
           var cfg = $$.list[idx],
-              after = false;
+            after = false;
           if ( ($$.list[idx].afterClose !== undefined) && $.isFunction($$.list[idx].afterClose) ) {
             after = $$.list[idx].afterClose;
           }
@@ -207,13 +270,11 @@
     },
 
     closeAll: function(){
-      if ( this.list.length ) {
-        var $$ = this,
-            idx = $$.list.length - 1;
-        $$.addAfterClose(function () {
-          $$.closeAll();
-        }, idx);
-        $$.close(idx, false);
+      for ( var j = 0; j < this.list.length; j++ ){
+        if ( !this.list[j].static ){
+          this.close(j);
+          j--;
+        }
       }
     },
 
@@ -287,7 +348,7 @@
         }
         else if ( ($$.list[idx][name] !== undefined) && (this.list[idx][name] !== func) ){
           var f = this.list[idx][name],
-              cont = $$.getContainer(idx);
+            cont = $$.getContainer(idx);
           $$.list[idx][name] = function(){
             var r = f(cont, $$.list[idx], idx);
             if ( r ){
@@ -323,9 +384,17 @@
           change = 1;
         }
         for ( var n in data ){
-          if ( data[n] !== this.list[idx].data.get(n) ){
-            this.list[idx].data.set(n, data[n]);
-            change = 1;
+          if ( (this.list[idx].data !== undefined) && $.isFunction(this.list[idx].data.set) ){
+            if ( data[n] !== this.list[idx].data.get(n) ){
+              this.list[idx].data.set(n, data[n]);
+              change = 1;
+            }
+          }
+          else{
+            if ( data[n] !== this.list[idx].data[n] ){
+              this.list[idx].data[n] = data[n];
+              change = 1;
+            }
           }
         }
         if ( change && (idx === this.options.selected) ){
@@ -361,9 +430,9 @@
 
     reload: function(url){
       var $$ = this,
-          idx = $$.getIdx(idx);
+        idx = $$.getIdx(idx);
       $$.reset(idx);
-      appui.fn.link(this.options.baseURL + url, 1);
+      appui.fn.link($$.baseURL + url, 1);
     },
 
     reset: function(idx, with_title){
@@ -380,19 +449,19 @@
     },
 
     getURL: function(idx){
-      if ( idx === undefined ){
-        idx = this.options.selected;
-      }
+      idx = this.getIdx(idx);
       return this.list[idx] ? this.list[idx].url : false;
     },
 
     // Gets the index of a tab from various parameters: index (!), URL, a DOM element (or jQuery object) inside a tab, a tab, or the currently selected index if there is no argument
     getIdx: function(idx){
+      var $$ = this,
+        original = idx;
       if ( idx === undefined ){
-        idx = this.options.selected;
+        idx = $$.options.selected;
       }
       else if ( typeof(idx) === 'string' ){
-        idx = this.search(idx);
+        idx = $$.search(idx);
       }
       else if ( typeof(idx) === 'object' ){
         // Not jQuery
@@ -401,7 +470,7 @@
         }
         if ( idx.length && $.isFunction(idx.index) ){
           var p = idx.parent();
-          while ( p.length && (p[0] !== this.element[0]) ){
+          while ( p.length && (p[0] !== $$.element[0]) ){
             idx = p;
             p = idx.parent();
           }
@@ -409,13 +478,16 @@
         }
       }
       if ( idx === -1 ){
-        for ( var i = 0; i < this.list.length; i++ ){
-          if ( !this.list[i].disabled ){
+        for ( var i = 0; i < $$.list.length; i++ ){
+          if ( $$.list[i].default ){
             return i;
+          }
+          if ( !$$.list[i].disabled && (idx === -1) ){
+            idx = i;
           }
         }
       }
-      return this.list[idx] ? idx : false;
+      return $$.list[idx] ? idx : false;
     },
 
     getObs: function(idx){
@@ -451,7 +523,7 @@
 
       var $$ = this,
         o = $$.options,
-        tmp = o.baseURL ? url.replace(o.baseURL, '') : url,
+        tmp = $$.baseURL ? url.replace($$.baseURL, '') : url,
         slash,
         i;
 
@@ -508,9 +580,9 @@
     add: function(obj, idx){
       var $$ = this,
         o = $$.options,
-        r, $tab, menu = 1, newIdx;
+        r, $tab, menu = 1, newIdx, $closeBtn;
       // Sinon on rajoute un tab
-      // Si idx n'est pas d�fini, ce sera le dernier tab
+      // Si idx n'est pas défini, ce sera le dernier tab
       if ( obj.url ) {
         if ((newIdx = $$.search(obj.url)) !== -1) {
           for (var k in obj) {
@@ -550,69 +622,117 @@
           }
           $$.list.push(obj);
           $tab = $($$.getTab(idx));
+          $closeBtn = $('<i/>').addClass(o.closeClass).click(function () {
+            $$.close($(this).closest("li").index());
+          });
           // Adding a close button is item is not static
-          if (!obj.static || (obj.static === undefined)) {
-            $tab.addClass("with_button").append(
-              $('<i/>').addClass(o.closeClass).click(function () {
-                $$.close($(this).closest("li").index());
-              })
-            );
-            if ( obj.url && !obj.menu ) {
-              obj.menu = [{
-                text: appui.lng.reload,
-                fn: function(i, ob){
-                  $$.reload(ob.current ? ob.current : ob.url);
-                }
-              }];
-            }
+          $tab.addClass("with_button").append($closeBtn);
+          if ( obj.static ) {
+            $closeBtn.hide();
           }
-          if (obj.menu && obj.menu.length) {
-            $tab.children().each(function () {
-              if ($(this).hasClass(o.menuClass)) {
-                menu = false;
-              }
-            });
-            if (menu && obj.url) {
-              $tab.append(
-                $('<i/>').addClass(o.menuClass).click(function (e) {
-                  var iEle = this,
-                    $li,
-                    $a,
-                    menuEle,
-                    $menu_ct = $('<ul/>').appendTo(document.body);
-                  $.each(obj.menu, function (i, v) {
-                    if ( v.text ){
-                      $li = $('<li/>');
-                      $a = $('<a/>').html(v.text);
-                      $menu_ct.append($li.append($a));
-                      $a.attr("href", v.url ? v.url : 'javascript:;');
-                      if ( v.fn && $.isFunction(v.fn) ){
-                        $a.click(function(){
-                          v.fn(idx, obj);
-                        })
+          $tab.children().each(function () {
+            if ($(this).hasClass(o.menuClass)) {
+              menu = false;
+            }
+          });
+          if (menu && obj.url) {
+            $tab.append(
+              $('<i/>').addClass(o.menuClass).click(function (e) {
+                var iEle = this,
+                  $li,
+                  $a,
+                  menuEle,
+                  $menu_ct = $('<ul/>').appendTo(document.body),
+                  idx = $$.getIdx(obj.url),
+                  ctx = [];
+
+                if ($$.list[idx].menu) {
+                  ctx = $$.list[idx].menu;
+                }
+                ctx.push({
+                  text: appui.lng.reload,
+                  fn: function (i, ob) {
+                    $$.reload(ob.current ? ob.current : ob.url);
+                  }
+                });
+                if ( $$.list[idx].static ){
+                  ctx.push({
+                    text: appui.lng.unmakeStatic,
+                    fn: function (i, ob) {
+                      $$.list[idx].static = false;
+                      $closeBtn.show();
+                    }
+                  });
+                }
+                else{
+                  ctx.push({
+                    text: appui.lng.makeStatic,
+                    fn: function (i, ob) {
+                      $$.list[idx].static = true;
+                      $closeBtn.hide();
+                    }
+                  });
+                  ctx.push({
+                    text: appui.lng.close,
+                    fn: function(i, ob){
+                      $$.close(i);
+                    }
+                  });
+                  ctx.push({
+                    text: appui.lng.closeAll,
+                    fn: function(i, ob){
+                      $$.closeAll();
+                    }
+                  });
+                }
+                if ( $$.list.length ) {
+                  ctx.push({
+                    text: appui.lng.closeOthers,
+                    fn: function (i, ob) {
+                      for (var j = 0; j < $$.list.length; j++) {
+                        if ((j !== i) && !$$.list[j].static) {
+                          $$.close(j);
+                          if (j < i) {
+                            i--;
+                          }
+                          j--;
+                        }
                       }
                     }
                   });
-                  $menu_ct.kendoContextMenu({
-                    close: function (e) {
-                      e.preventDefault();
-                      $menu_ct.data("kendoContextMenu").destroy();
-                      $menu_ct.remove();
+                }
+                $.each(ctx, function (i, v) {
+                  if ( v.text ){
+                    $li = $('<li style="white-space: nowrap"/>');
+                    $a = $('<a/>').html(v.text);
+                    $menu_ct.append($li.append($a));
+                    $a.attr("href", v.url ? v.url : 'javascript:;');
+                    if ( v.fn && $.isFunction(v.fn) ){
+                      $a.click(function(){
+                        v.fn(idx, obj, $$.getContainer(idx));
+                      })
                     }
-                  });
-                  $menu_ct.data("kendoContextMenu").open(-1000,-1000);
-                  var $li = $(e.target).closest("li"),
-                      offset = $li.offset(),
-                      w = $menu_ct.data("kendoContextMenu").wrapper.width(),
-                      x = offset.left + $li.outerWidth(true) - w,
-                      y = offset.top + $li.outerHeight(true);
-                  if ( x < 0 ){
-                    x = 0;
                   }
-                  $menu_ct.css({left: x, top: y});
-                })
-              );
-            }
+                });
+                $menu_ct.kendoContextMenu({
+                  close: function (e) {
+                    e.preventDefault();
+                    $menu_ct.data("kendoContextMenu").destroy();
+                    $menu_ct.remove();
+                  }
+                });
+                $menu_ct.data("kendoContextMenu").open(-1000,-1000);
+                var $li = $(e.target).closest("li"),
+                  offset = $li.offset(),
+                  w = $menu_ct.data("kendoContextMenu").wrapper.width(),
+                  x = offset.left + $li.outerWidth(true) - w,
+                  y = offset.top + $li.outerHeight(true);
+                if ( x < 0 ){
+                  x = 0;
+                }
+                $menu_ct.css({left: x, top: y});
+              })
+            );
           }
           if (obj.content) {
             $$.setContent(obj.content, idx);
@@ -702,7 +822,7 @@
           }
         }
         $$.add(obj);
-        return $$.activate(obj.old_path && (obj.old_path.indexOf(obj.url) === 0) ? obj.old_path : obj.url, 1);
+        return $$.activate(obj.old_path && (obj.old_path.indexOf(obj.url) === 0) ? obj.old_path : (obj.current ? obj.current : obj.url), 1);
       }
     }
   });
