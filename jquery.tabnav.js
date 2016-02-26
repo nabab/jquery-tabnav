@@ -649,41 +649,43 @@
                 if ($$.list[idx].menu) {
                   ctx = $$.list[idx].menu;
                 }
-                ctx.push({
-                  text: appui.lng.reload,
-                  fn: function (i, ob) {
-                    $$.reload(ob.current ? ob.current : ob.url);
+                if ( !$$.list[idx].static ){
+                  ctx.push({
+                    text: appui.lng.reload,
+                    fn: function (i, ob) {
+                      $$.reload(ob.current ? ob.current : ob.url);
+                    }
+                  });
+                  if ( $$.list[idx].pinned ){
+                    ctx.push({
+                      text: appui.lng.unpin,
+                      fn: function (i, ob) {
+                        $$.list[idx].pinned = false;
+                        $closeBtn.show();
+                      }
+                    });
                   }
-                });
-                if ( $$.list[idx].static ){
-                  ctx.push({
-                    text: appui.lng.unmakeStatic,
-                    fn: function (i, ob) {
-                      $$.list[idx].static = false;
-                      $closeBtn.show();
-                    }
-                  });
-                }
-                else{
-                  ctx.push({
-                    text: appui.lng.makeStatic,
-                    fn: function (i, ob) {
-                      $$.list[idx].static = true;
-                      $closeBtn.hide();
-                    }
-                  });
-                  ctx.push({
-                    text: appui.lng.close,
-                    fn: function(i, ob){
-                      $$.close(i);
-                    }
-                  });
-                  ctx.push({
-                    text: appui.lng.closeAll,
-                    fn: function(i, ob){
-                      $$.closeAll();
-                    }
-                  });
+                  else {
+                    ctx.push({
+                      text: appui.lng.pin,
+                      fn: function (i, ob) {
+                        $$.list[idx].pinned = true;
+                        $closeBtn.hide();
+                      }
+                    });
+                    ctx.push({
+                      text: appui.lng.close,
+                      fn: function(i, ob){
+                        $$.close(i);
+                      }
+                    });
+                    ctx.push({
+                      text: appui.lng.closeAll,
+                      fn: function(i, ob){
+                        $$.closeAll();
+                      }
+                    });
+                  }
                 }
                 if ( $$.list.length ) {
                   ctx.push({
