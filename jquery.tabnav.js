@@ -30,6 +30,9 @@
         $$.parent = false;
       }
       else{
+        $$.element.closest(".k-content").css({
+          overflow: "hidden"
+        });
         var tmp = $$.parent.tabNav("getURL", $$.element);
         if ( tmp ){
           tmp += '/';
@@ -182,12 +185,12 @@
         if ( force || $$.isChanged() ) {
           // If there is a callonce attached to this index we execute it and delete it
           if ($$.list[idx].callonce) {
-            $$.list[idx].callonce(cont, idx, $$.list[idx].data);
+            $$.list[idx].callonce(cont, idx, $$.list[idx].data, $$);
             $$.list[idx].callonce = false;
           }
           // If there is a callback attached to this index we execute it
           if ($$.list[idx].callback && !$$.list[idx].disabled) {
-            $$.list[idx].callback(cont, idx, $$.list[idx].data);
+            $$.list[idx].callback(cont, idx, $$.list[idx].data, $$);
             $$.resize();
           }
           else {
@@ -688,20 +691,29 @@
                   }
                 }
                 if ( $$.list.length ) {
-                  ctx.push({
-                    text: appui.lng.closeOthers,
-                    fn: function (i, ob) {
-                      for (var j = 0; j < $$.list.length; j++) {
-                        if ((j !== i) && !$$.list[j].static) {
-                          $$.close(j);
-                          if (j < i) {
-                            i--;
-                          }
-                          j--;
-                        }
-                      }
+                  var hasClosable = false;
+                  $.each($$.list, function(i, v){
+                    if ( !v.static ){
+                      hasClosable = 1;
+                      return false;
                     }
                   });
+                  if ( hasClosable ){
+                    ctx.push({
+                      text: appui.lng.closeOthers,
+                      fn: function (i, ob) {
+                        for (var j = 0; j < $$.list.length; j++) {
+                          if ((j !== i) && !$$.list[j].static) {
+                            $$.close(j);
+                            if (j < i) {
+                              i--;
+                            }
+                            j--;
+                          }
+                        }
+                      }
+                    });
+                  }
                 }
                 $.each(ctx, function (i, v) {
                   if ( v.text ){
