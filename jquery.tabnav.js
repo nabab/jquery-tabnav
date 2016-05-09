@@ -25,6 +25,10 @@
       menuClass: "fa fa-caret-down",
       // Pre-loaded list
       list: [],
+      activate: false,
+      close: false,
+      transform: false,
+      afterClose: false,
       scrollable: false,
       tabPosition: "top",
       baseTitle: '',
@@ -188,8 +192,12 @@
     close: function(idx, non_activate){
       if ( (idx = this.getIndex(idx)) !== false ){
         var $$ = this,
+          o = $$.options,
           ok = 1,
           cont = this.getContainer(idx);
+        if ( $.isFunction(o.beforeClose) ){
+          o.beforeClose($$.element, idx, $$);
+        }
         if ( ($$.list[idx].close !== undefined) &&
           $.isFunction($$.list[idx].close) &&
           !$$.list[idx].close(cont, $$.list[idx], idx) ){
@@ -213,6 +221,9 @@
             else if ( idx === $$.options.selected ) {
               $$.activate($$.list[idx] ? idx : idx - 1, 1);
             }
+          }
+          if ( $.isFunction(o.afterClose) ){
+            o.afterClose($$.element, idx, $$);
           }
         }
       }
@@ -283,7 +294,7 @@
 
     setData: function(data, idx){
       if ( (idx = this.getIndex(idx)) !== false ){
-        this.list[idx].data = data;
+        this.list[idx].data = window.kendo !== undefined ? kendo.observable(data) : data;
       }
       return this;
     },
@@ -469,6 +480,10 @@
         newIndex,
         $closeBtn;
 
+      if ( $.isFunction(o.transform) ){
+        obj = o.transform(obj);
+      }
+
       // A URL is mandatory
       if ( obj.url ) {
 
@@ -487,6 +502,22 @@
             else if (k === 'data') {
               $$.setData(obj[k], newIndex);
             }
+            // Color for IDE tabs
+            else if ( k === 'bcolor' ){
+              $$.list[newIndex][k] = obj[k];
+              var col = tinycolor(obj[k].bcolor);
+              for ( var i = 1; i < 100; i++ ){
+                col = col.lighten(i);
+                if ( col.getLuminance() > 0.7 ){
+                  break;
+                }
+              }
+              $$.getTab(newIndex).css("background-color", col.toHexString());
+            }
+            else if ( k === 'fcolor' ){
+              $$.list[newIndex][k] = obj[k];
+              $$.getTab(newIndex).children().css("color", tinycolor(obj.fcolor).darken(80).toHexString());
+            }
             else{
               $$.list[newIndex][k] = obj[k];
             }
@@ -501,6 +532,9 @@
             content: ' ',
             encoded: false
           };
+          if ( obj.data && window.kendo ){
+            obj.data = kendo.observable(obj.data);
+          }
           if ((idx === undefined) || (idx >= $$.list.length)) {
             idx = $$.list.length;
             $$.list.push(obj);
@@ -577,9 +611,10 @@
       }
     },
 
+    // Loads a remote content and injects it as a new tab
     link: function(url, force){
-      appui.fn.log("LINK!", url);
-      // Loads a remote content and injects it as a new tab
+
+      // Analyses the arguments
       $.each(arguments, function(i, v){
         if ( (typeof(v) === "boolean") || (v === 0) || (v === 1) ){
           force = v ? true : false;
@@ -591,22 +626,20 @@
           url = v;
         }
       });
+      // if no URL we use the current one
       if ( url === '' ){
         url = this.currentURL;
       }
-      appui.fn.log("LINK2", url);
 
       var $$ = this,
           ele,
-          idx = $$.search(url);
+          idx = $$.search(url),
+          sidx = $$.search(url, true);
 
       if ( idx != -1 ){
-        if ( (ele = $$.getSubTabNav(idx)) && (url !== $$.list[idx].url) ){
+        $$.activate(url);
+        if ( (ele = $$.getSubTabNav(idx)) && (sidx == -1) ){
           ele.tabNav("link", url.substr($$.list[idx].url.length + 1), force);
-          return;
-        }
-        if ( !force ){
-          $$.activate(url);
           return;
         }
       }
@@ -880,10 +913,14 @@
       // - the URL is different
       // We really activate it
       if ( force || $$.isChanged() ) {
-        appui.fn.log("Activation", url, $$.element);
+        //appui.fn.log("Activation", url, $$.element);
 
         // This is the only moment where selected is set
         o.selected = idx;
+
+        if ( $.isFunction(o.activate) ){
+          o.activate($$.element, idx, $$);
+        }
 
         $$.resize();
 
@@ -1073,7 +1110,6 @@
     navigate: function(obj, idx){
       var $$ = this,
           o = $$.options;
-      appui.fn.log("NAV", obj);
       obj = $.ui.tabNav.defaultObj(obj, $$);
       if ( obj.url ) {
         $$.add(obj, idx);
