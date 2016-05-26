@@ -32,6 +32,7 @@
       scrollable: false,
       tabPosition: "top",
       baseTitle: '',
+      autoload: false,
       // Default selected tab
       selected: -1,
       // Will override all other settings, change has no effect once created
@@ -86,7 +87,7 @@
       // jQuery object of the nearest parent tabNav if exists
       $$.parent = parent.length ? parent : false;
 
-        // The URL on top of which the tabNav is (automatically set if parent exists, depends on options otherwise)
+      // The URL on top of which the tabNav is (automatically set if parent exists, depends on options otherwise)
       $$.baseURL = '';
 
       // The current URL is the full URL of the widget starting after baseURL
@@ -156,8 +157,8 @@
 
     getFullBaseURL: function(){
       var t = this.element,
-          base = '',
-          tmp;
+        base = '',
+        tmp;
       while ( tmp = t.tabNav("getBaseURL") ){
         base = tmp + base;
         if ( !(t = t.tabNav("getParent")) ){
@@ -294,7 +295,7 @@
 
     setData: function(data, idx){
       if ( (idx = this.getIndex(idx)) !== false ){
-        this.list[idx].data = window.kendo !== undefined ? kendo.observable(data) : data;
+        this.list[idx].data = /*window.kendo !== undefined ? kendo.observable(data) : */data;
       }
       return this;
     },
@@ -443,6 +444,7 @@
                 target: e.target
               });
               $menu_ct.data("kendoContextMenu").open();
+              $menu_ct.css({fontFamily: "inherit", fontSize: "inherit"});
             }
           }
         })
@@ -487,7 +489,6 @@
       // A URL is mandatory
       if ( obj.url ) {
 
-
         // Searching the URL among the tabs to check if it doesn't exist
         if ((newIndex = $$.search(obj.url)) !== -1) {
 
@@ -504,19 +505,10 @@
             }
             // Color for IDE tabs
             else if ( k === 'bcolor' ){
-              $$.list[newIndex][k] = obj[k];
-              var col = tinycolor(obj[k].bcolor);
-              for ( var i = 1; i < 100; i++ ){
-                col = col.lighten(i);
-                if ( col.getLuminance() > 0.7 ){
-                  break;
-                }
-              }
-              $$.getTab(newIndex).css("background-color", col.toHexString());
+              $$.setColor([obj.bcolor, obj.fcolor ? obj.fcolor : "#FFF"], newIndex, 1);
             }
             else if ( k === 'fcolor' ){
-              $$.list[newIndex][k] = obj[k];
-              $$.getTab(newIndex).children().css("color", tinycolor(obj.fcolor).darken(80).toHexString());
+
             }
             else{
               $$.list[newIndex][k] = obj[k];
@@ -532,9 +524,11 @@
             content: ' ',
             encoded: false
           };
+          /*
           if ( obj.data && window.kendo ){
             obj.data = kendo.observable(obj.data);
           }
+          */
           if ((idx === undefined) || (idx >= $$.list.length)) {
             idx = $$.list.length;
             $$.list.push(obj);
@@ -574,25 +568,28 @@
           }
           // Disabling disabled
           if (obj.disabled) {
-            $$.wid.disable($$.getTab(idx));
+            $$.disable(idx);
           }
-          // Color for IDE tabs
+
+          // Tabs' color
           if ( obj.bcolor ){
-            var col = tinycolor($$.getObs(idx).bcolor);
-            for ( var i = 1; i < 100; i++ ){
-              col = col.lighten(i);
-              if ( col.getLuminance() > 0.7 ){
-                break;
-              }
+            $$.setColor([obj.bcolor, obj.fcolor], idx, 1);
+            delete obj.bcolor;
+            if ( obj.fcolor !== undefined ){
+              delete obj.fcolor;
             }
-            $tab.css("background-color", col.toHexString());
-          }
-          if ( obj.fcolor ){
-            $tab.children().css("color", tinycolor(obj.fcolor).darken(80).toHexString());
           }
         }
       }
       return $$;
+    },
+
+    disable: function(idx){
+      this.wid.disable(this.getTab(idx));
+    },
+
+    enable: function(idx){
+      this.wid.enable(this.getTab(idx));
     },
 
     // Sets the current url of the widget, and of the widgets above
@@ -613,7 +610,6 @@
 
     // Loads a remote content and injects it as a new tab
     link: function(url, force){
-
       // Analyses the arguments
       $.each(arguments, function(i, v){
         if ( (typeof(v) === "boolean") || (v === 0) || (v === 1) ){
@@ -632,9 +628,9 @@
       }
 
       var $$ = this,
-          ele,
-          idx = $$.search(url),
-          sidx = $$.search(url, true);
+        ele,
+        idx = $$.search(url),
+        sidx = $$.search(url, true);
 
       if ( idx != -1 ){
         $$.activate(url);
@@ -855,6 +851,7 @@
 
     // This function is the callback after activating a tab, but activates a given tab if not already
     activate: function(idx, force){
+
       // if no parameter is passed we use the current url
       var $$ = this,
         o = $$.options,
@@ -872,6 +869,7 @@
           return this;
         }
       }
+
       //appui.fn.log("ACTIVATE", idx, url);
       // actual tab
       var tab = $$.getTab(idx),
@@ -914,7 +912,11 @@
       // We really activate it
       if ( force || $$.isChanged() ) {
         //appui.fn.log("Activation", url, $$.element);
-
+        if ( $$.list[idx].load ){
+          $$.list[idx].load = false;
+          $$.link(url, 1);
+          return this;
+        }
         // This is the only moment where selected is set
         o.selected = idx;
 
@@ -924,11 +926,6 @@
 
         $$.resize();
 
-        if ( $$.list[idx].load ){
-          $$.list[idx].load = false;
-          $$.link(url, 1);
-          return this;
-        }
         // If there is a callonce attached to this index we execute it and delete it
         if ($$.list[idx].callonce) {
           $$.list[idx].callonce(cont, idx, $$.list[idx].data, $$);
@@ -973,25 +970,20 @@
         }
 
         // Change tab color if defined
-        if ($$.list[idx].bcolor) {
-          $($$.getTab(idx)).animate({backgroundColor: $$.list[idx].bcolor});
-          if ($$.list[idx].url !== $$.getObs(oldSelected).url) {
-            var tab = $($$.getTab(oldSelected)), col = tinycolor($$.getObs(oldSelected).bcolor);
-            for (var i = 1; i < 100; i++) {
-              col = col.lighten(i);
-              if (col.getLuminance() > 0.7) {
-                break;
-              }
-            }
-            tab.animate({backgroundColor: col.toHexString()});
+        if ( $$.list[idx].bColorAct && $$.list[idx].fColorAct ) {
+          var $tab = $($$.getTab(idx));
+          $tab.animate({backgroundColor: $$.list[idx].bColorAct});
+          $tab.children().animate({color: $$.list[idx].fColorAct});
+        }
+        if ($$.list[idx].url !== $$.getObs(oldSelected).url) {
+          var $tab = $($$.getTab(oldSelected)),
+            tabObj = $$.getObs(oldSelected);
+          if ( tabObj.bColor && tabObj.fColor ){
+            $tab.animate({backgroundColor: tabObj.bColor});
+            $tab.children().animate({color: tabObj.fColor});
           }
         }
-        if ($$.list[idx].fcolor) {
-          $($$.getTab(idx)).children().css("color", $$.list[idx].fcolor);
-          if ($$.list[idx].url !== $$.getObs(oldSelected).url) {
-            $($$.getTab(oldSelected)).children().animate({color: tinycolor($$.getObs(oldSelected).fcolor).darken(80).toHexString()});
-          }
-        }
+
         appui.env.ele = $$.getContainer(idx);
       }
       else{
@@ -999,7 +991,7 @@
       }
       return this;
     },
-    
+
     isValidIndex: function(idx){
       if ( idx === 0 ){
         return true;
@@ -1023,8 +1015,8 @@
     // Gets the index of a tab from various parameters: index (!), URL, a DOM element (or jQuery object) inside a tab, a tab, or the currently selected index if there is no argument
     getIndex: function(idx, force){
       var $$ = this,
-          o = $$.options,
-          url = idx;
+        o = $$.options,
+        url = idx;
       if ( !$$.list.length ){
         return false;
       }
@@ -1109,11 +1101,73 @@
 
     navigate: function(obj, idx){
       var $$ = this,
-          o = $$.options;
+        o = $$.options;
       obj = $.ui.tabNav.defaultObj(obj, $$);
       if ( obj.url ) {
         $$.add(obj, idx);
         return $$.activate(obj.currentURL ? obj.currentURL : obj.url, true);
+      }
+    },
+
+    setColor: function(col, idx, setCss) {
+      var $$ = this,
+        tab = $$.getTab(idx),
+      // Backgroud color inactive
+        bc = false,
+      // Backgroud color active
+        bca = false,
+      // Font color inactive
+        fc = false,
+      // Font color active
+        fca = false,
+      // TinyColor
+        tc = false,
+        res = {};
+
+      if ( $.isArray(col) && col.length ){
+        bca = col[0];
+        if ( col[1] !== undefined ){
+          fca = col[1];
+        }
+      }
+      else {
+        bca = col;
+      }
+      if ( bca ){
+        bc = tinycolor(bca);
+        for ( var i = 1; i < 100; i++ ){
+          bc = bc.lighten(i);
+          if ( bc.getLuminance() > 0.7 ){
+            bc = bc.toHexString();
+            break;
+          }
+        }
+        if ( bc && bca ){
+          $$.set('bColor', bc, idx);
+          $$.set('bColorAct', bca, idx);
+        }
+      }
+      tc = tinycolor(bca);
+      if ( tc ){
+        if ( tc.getLuminance() < 0.7 ){
+          fca = fca ? fca : '#FFF';
+          fc = '#313131';
+        }
+        else {
+          fca = fca ? fca : '#000';
+          fc = '#FFF';
+        }
+        if ( fc && fca ){
+          $$.set('fColor', fc, idx);
+          $$.set('fColorAct', fca, idx);
+        }
+      }
+
+      if ( tab && bc && fc && setCss ){
+        $(tab).css({
+          "background-color": bc,
+          "color": fc
+        });
       }
     },
 
