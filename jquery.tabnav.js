@@ -51,7 +51,8 @@
       }
       var $$ = this,
         o = $$.options,
-        parent = $$.element.closest("." + this.widgetFullName);
+        parent = $$.element.closest("." + this.widgetFullName),
+        url;
 
       /**
        * current state of the list (of tabs) made of objects of this type:
@@ -118,7 +119,6 @@
           $$.add($.ui.tabNav.defaultObj(v, $$));
         });
 
-        var url;
         if ( o.current ){
           $$.activate(o.current, true);
           o.current = false;
@@ -128,7 +128,7 @@
           $$.activate(url, true);
         }
         else{
-          $$.activate(false, true);
+          $$.activateDefault();
         }
       }
       return this;
@@ -219,8 +219,11 @@
             if ( idx < $$.options.selected ){
               $$.options.selected--;
             }
-            else if ( idx === $$.options.selected ) {
-              $$.activate($$.list[idx] ? idx : idx - 1, 1);
+            else if ( $$.list.length && (idx === $$.options.selected) ) {
+              if ( $$.list[idx] === undefined ) {
+                idx--;
+              }
+              $$.activate($$.list[idx].current ? $$.list[idx].current : $$.list[idx].url, true);
             }
           }
           if ( $.isFunction(o.afterClose) ){
@@ -455,7 +458,7 @@
     // Returns the url relative to the current tabNav from the given url
     parseURL: function(url){
       var $$ = this;
-      if ( url.indexOf(appui.env.root) === 0 ){
+      if ( url && (url.indexOf(appui.env.root) === 0) ){
         url = url.substr(appui.env.root.length);
       }
       if ( $$.baseURL && (url.indexOf($$.baseURL) === 0) ){
@@ -711,11 +714,20 @@
 
     reset: function(idx, with_title){
       var $$ = this,
-        o = $$.options;
+          o = $$.options;
       idx = $$.getIndex(idx);
       if ( idx !== false ) {
         $$.setContent(" ", idx);
         $$.list[idx] = {url: $$.list[idx].url, title: $$.list[idx].title};
+        var $cont = $$.getContainer(idx),
+            fn;
+        if ( $cont.length ){
+          fn  = $cont.data("appui-tabnav-callonce");
+        }
+        if ( fn ){
+          $$.list[idx].callonce = fn;
+          $cont.removeData("appui-tabnav-callonce");
+        }
         if ( with_title ) {
           $$.setTitle(" ", idx);
         }
@@ -838,7 +850,7 @@
       var $$ = this,
         idx = $$.getIndex(url);
       $$.reset(idx);
-      $$.link(url, 1);
+      $$.link(url, true);
     },
 
 
@@ -848,26 +860,64 @@
      *
      */
 
+    activateIdx: function(idx, force){
+      idx = this.getIndex(idx);
+      if ( this.list[idx] ){
+        this.activate(this.list[idx].current ? this.list[idx].current : this.list[idx].url);
+      }
+      else if ( force ){
+        this.activateDefault();
+      }
+      return this;
+    },
+
+    activateDefault: function(){
+      if ( this.list.length ){
+        var idx = false;
+        $.each(this.list, function(i, it){
+          if ( it.default ){
+            idx = i;
+            return false;
+          }
+          if ( idx === false ){
+            idx = i;
+          }
+        });
+        if ( idx !== false ){
+          this.activate(this.list[idx].current ? this.list[idx].current : this.list[idx].url);
+        }
+      }
+      return this;
+    },
+
 
     // This function is the callback after activating a tab, but activates a given tab if not already
-    activate: function(idx, force){
+    activate: function(url, force){
 
       // if no parameter is passed we use the current url
       var $$ = this,
-        o = $$.options,
+          o = $$.options,
+          idx;
       // either the requested url or the url corresponding to the target index
-        url = typeof(idx) === 'string' ? $$.parseURL(idx) : false;
-      idx = $$.getIndex(idx, true);
-      if ( (idx === false) || ($$.list[idx] === undefined) ){
-        throw new Error("Impossible to find an index for " + url + " in element with ID " + $$.element.id);
-        return this;
-      }
+      url = $$.parseURL(url);
+
       if ( !url ){
-        url = $$.list[idx].currentURL ? $$.list[idx].currentURL : $$.list[idx].url;
+        //url = $$.list[idx].currentURL ? $$.list[idx].currentURL : $$.list[idx].url;
         if ( !url ){
-          throw new Error("No url defined for this tab");
+          $$.activateDefault();
+          //throw new Error("No url defined for this tab");
           return this;
         }
+      }
+      idx = $$.getIndex(url);
+      if ( (idx === false) || ($$.list[idx] === undefined) ){
+        if ( o.autoload ){
+          $$.link(url);
+        }
+        else{
+          throw new Error("Impossible to find an index for " + url + " in element with ID " + $$.element.id);
+        }
+        return this;
       }
 
       //appui.fn.log("ACTIVATE", idx, url);
@@ -929,6 +979,7 @@
         // If there is a callonce attached to this index we execute it and delete it
         if ($$.list[idx].callonce) {
           $$.list[idx].callonce(cont, idx, $$.list[idx].data, $$);
+          $cont.data("appui-tabnav-callonce", $$.list[idx].callonce);
           $$.list[idx].callonce = false;
           $$.resize();
         }
@@ -993,22 +1044,7 @@
     },
 
     isValidIndex: function(idx){
-      if ( idx === 0 ){
-        return true;
-      }
-      if ( !idx ){
-        return false;
-      }
-      if ( (typeof(idx) === 'number') && (idx > -1) ){
-        return true;
-      }
-      if ( (typeof(idx) === 'string') ){
-        return true;
-      }
-      if ( (typeof(idx) === 'object') ){
-        return true;
-      }
-      return false;
+      return this.list[idx] !== undefined;
     },
 
 
@@ -1021,15 +1057,6 @@
         return false;
       }
       if ( !$$.isValidIndex(idx) ) {
-        if ( o.current ){
-          idx = o.current;
-          o.current = false;
-        }
-        else if ( o.selected > -1 ){
-          idx = o.selected;
-        }
-      }
-      if ( $$.isValidIndex(idx) ) {
         if ( typeof(idx) === 'string' ){
           idx = $$.search(idx);
         }
@@ -1046,6 +1073,13 @@
             }
             idx = p.length ? p.children("div[role=tabpanel]").index(idx) : -1;
           }
+        }
+        else if ( o.current ){
+          idx = o.current;
+          o.current = false;
+        }
+        else if ( o.selected > -1 ){
+          idx = o.selected;
         }
       }
       if ( !$$.isValidIndex(idx) && force ) {
@@ -1067,8 +1101,8 @@
      * @return {int} The index of the tab with the same URL
      */
     search: function(url, strict){
-      if ( typeof(url) !== 'string' ){
-        return false;
+      if ( !url ){
+        return -1;
       }
       if ( url.indexOf(appui.env.root) === 0 ){
         url = url.substr(appui.env.root.length);
