@@ -81,6 +81,7 @@
      **/
       $$.activated = false;
       $$.list = [];
+      $$.isLoaded = false;
 
       // If set to true activate will be triggered - always the first time
       $$.changed = true;
@@ -131,6 +132,9 @@
           $$.activateDefault();
         }
       }
+      if ( !$$.isLoaded ){
+        $$.isLoaded = true;
+      }
       return this;
     },
 
@@ -174,9 +178,12 @@
 
     // Triggered when manually activating a tab. Launches the activate function
     onActivate: function(item){
-      var idx = $(item).index();
-      if ( this.list[idx] && (this.options.selected !== idx) ){
-        this.activate(this.list[idx].currentURL ? this.list[idx].currentURL : this.list[idx].url);
+      var idx = $(item).index(),
+          $$ = this;
+      if ( $$.isLoaded ){
+        if ( $$.list[idx] && ($$.options.selected !== idx) ){
+          this.activate(this.list[idx].currentURL ? this.list[idx].currentURL : this.list[idx].url);
+        }
       }
     },
 
@@ -366,7 +373,8 @@
                 ctx.push({
                   text: appui.lng.reload,
                   fn: function (i, ob) {
-                    $$.reload(ob.currentURL ? ob.currentURL : ob.url);
+                    appui.fn.log(ob);
+                    $$.reload(appui.env.path);
                   }
                 });
                 if ($$.list[idx].pinned) {
@@ -458,7 +466,10 @@
     // Returns the url relative to the current tabNav from the given url
     parseURL: function(url){
       var $$ = this;
-      if ( url && (url.indexOf(appui.env.root) === 0) ){
+      if ( typeof(url) !== 'string' ){
+        url = url.toString();
+      }
+      if ( url.indexOf(appui.env.root) === 0 ){
         url = url.substr(appui.env.root.length);
       }
       if ( $$.baseURL && (url.indexOf($$.baseURL) === 0) ){
@@ -941,6 +952,7 @@
       // Previous "current url"
         oldCurrent = $$.currentURL;
 
+      appui.fn.log("ACTIVATE:" + url);
       if ( !$cont.length || !$tab.length ){
         throw new Error("There is a problem with the widget...?");
         return this;
@@ -965,7 +977,7 @@
         if ( $$.list[idx].load ){
           $$.list[idx].load = false;
           $$.link(url, 1);
-          return this;
+          return $$;
         }
         // This is the only moment where selected is set
         o.selected = idx;
@@ -1034,7 +1046,6 @@
             $tab.children().animate({color: tabObj.fColor});
           }
         }
-
         appui.env.ele = $$.getContainer(idx);
       }
       else{
