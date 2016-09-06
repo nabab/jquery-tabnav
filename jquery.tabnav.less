@@ -4,7 +4,19 @@ div.ui-tabNav{
   overflow: hidden;
   padding: 0 !important;
   margin: 0 !important;
-
+  div.ui-tabNav-tabSelected{
+    display: none;
+    position: absolute;
+    top: 0px;
+    left: 14px;
+    right: 20px;
+    height: 4px;
+  }
+  li.k-state-active{
+    div.ui-tabNav-tabSelected {
+      display: block;
+    }
+  }
 }
 div.appui-logger{
   .ui-fancytree, .ui-fancytree li, .ui-fancytree li, .ui-fancytree span.fancytree-title{
@@ -12,4 +24,3 @@ div.appui-logger{
     color: inherit !important;
   }
 }
-

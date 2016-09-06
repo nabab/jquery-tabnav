@@ -50,22 +50,16 @@
         res = {
           url: obj.url,
           load: true,
-          title: obj.title ? obj.title : appui.lng.untitled
+          title: obj.title ? obj.title : appui.lng.untitled,
+          static: !!obj.static,
+          pinned: !!obj.pinned,
+          current: obj.current ? obj.current : obj.url
         };
         if ( obj.list && obj.list.length ){
           res.list = {};
           $.each(obj.list, function(i, v){
             res.list[v.url] = _storageObject(v);
           });
-        }
-        if ( obj.pinned ){
-          res.pinned = obj.pinned;
-        }
-        if ( obj.static ){
-          res.static = obj.static;
-        }
-        if ( obj.current ){
-          res.current = obj.current;
         }
         if ( obj.bcolor ){
           res.bcolor = obj.bcolor;
@@ -192,7 +186,6 @@
 		_create: function(){
 			if ( this.element.hasClass(this.widgetFullName) ){
 				throw new Error("The widget has already been created, impossible to recreate");
-				return false;
 			}
 			var $$ = this,
           o = $$.options,
@@ -202,7 +195,9 @@
 
 			// Will be set on 1 at the end of this function
 			$$.isLoaded = false;
-      $$.bgColorIsLight = null;
+      $$.bColorIsLight = true;
+      $$.fColorIsLight = false;
+      $$.colorIsDone = false;
 			$$.closeClassSelector = "." + appui.fn.replaceAll(" ", ".", o.closeClass);
 			$$.menuClassSelector = "." + appui.fn.replaceAll(" ", ".", o.closeClass);
 			/**
@@ -274,6 +269,10 @@
 
 			// Adds to the list array of the tabNav instances
 			$.ui.tabNav.addTabNav($$.element);
+
+      $$.bThemeColor = $$.element.css("backgroundColor");
+      $$.fThemeColor = $$.element.css("color");
+      appui.fn.log("COLORS: " + $$.bThemeColor  + "/" + $$.fThemeColor);
 
       // Through internal storage a popup will show up asking the user
       // if he wants to reopen previous tabs showing the stored tree
@@ -438,7 +437,7 @@
             else{
               o.list.push(v);
             }
-          })
+          });
           appui.fn.log("LIST2", $$.element, JSON.stringify(obj.list), JSON.stringify(o.list));
         }
       }
@@ -542,14 +541,11 @@
 		},
 
     getCurrentURL: function(idx, force){
-      idx = this.getIndex(idx, force);
-      if ( this.list[idx] ){
-        return this.list[idx].currentURL ?
-          this.list[idx].currentURL : (
-            this.options.list[idx].current ?
-              this.options.list[idx].current :
-              this.list[idx].url
-          );
+      var $$ = this;
+      if ( (idx = $$.getIndex(idx, force)) !== false ) {
+        if ( $$.list[idx] ) {
+          return $$.list[idx].currentURL ? $$.list[idx].currentURL : $$.list[idx].url;
+        }
       }
       return false;
     },
@@ -591,7 +587,6 @@
           o = $$.options;
 			if ( !$$.list[idx] ){
 				throw new Error("The index " + idx + " doesn't exist in the list which has " + $$.list.length + " elements");
-				return false;
 			}
 			//appui.fn.log("setCurrent", url);
 			//url = $$.parseURL(url);
@@ -615,7 +610,6 @@
     _urlActivation: function(url, idx, force){
       var $$ = this,
           o = $$.options;
-      appui.fn.log("_urlActivation: " + url);
       if ( $$.isValidIndex(idx) ){
         // Looking for another tabNav widget inside the selected tab panel
         var subtab = $$.getSubTabNav(idx);
@@ -748,7 +742,6 @@
 			// Error if one element is missing
 			if ( !$cont.length || !$tab.length ){
 				throw new Error("There is a problem with the widget...?");
-				return this;
 			}
 
 			// Checking difference between former and new URLs
@@ -789,7 +782,8 @@
 				$$.resize();
 
 				// If there is a callonce attached to this index we execute it and delete it
-				if ($$.list[idx].callonce) {
+				if ( $$.list[idx].callonce ) {
+				  appui.fn.log("callonce", $$.list[idx].callonce.toString());
 					$$.list[idx].callonce(cont, idx, $$.list[idx].data, $$);
 					$cont.data("appui-tabnav-callonce", $$.list[idx].callonce);
 					$$.list[idx].callonce = false;
@@ -804,7 +798,7 @@
         //appui.fn.log("_urlActivation: " + url);
         $$._urlActivation(url, idx, force);
 
-        $$.activateColor(idx, oldSelected);
+        //$$.activateColor(idx, oldSelected);
 				//appui.fn.log("***COUNT****", $tab.length, $tab.siblings().length);
 				$tab.data("appui-tabnav-activated", 1).siblings().data("appui-tabnav-activated", 0);
 			}
@@ -836,7 +830,6 @@
 
 		getContent: function(idx, force){
 			if ( (idx = this.getIndex(idx, force)) !== false ){
-				return this.wid.contentHolder(idx).html();
 				return this.wid.contentHolder(idx).html();
 			}
 		},
@@ -902,12 +895,13 @@
         }
         // Color for IDE tabs
         else if (k === 'bcolor'){
-          $$.setColor([obj.bcolor, obj.fcolor ? obj.fcolor : "#FFF"], idx, 1);
+          $$.setColor(obj.bcolor, obj.fcolor ? obj.fcolor : false, idx, true);
         }
-        else{
+        else if (k !== 'fcolor'){
           $$.list[idx][k] = obj[k];
         }
       }
+      $$.setColorSelector(obj.fcolor ? obj.fcolor : false, idx);
       if ( o.autoload ){
         _storageAdd(
           $.extend({}, $$.list[idx], {current: obj.currentURL ? obj.currentURL : obj.url}),
@@ -965,7 +959,6 @@
           }
           else {
             throw new Error("Wrong tab index!");
-            return;
           }
 
           $tab = $($$.getTab(idx));
@@ -973,7 +966,10 @@
             $$.close($(this).closest("li").index());
           });
           // Adding a close button is item is not static
-          $tab.addClass("with_button").append($closeBtn);
+          $tab.addClass("with_button").append(
+            '<div class="ui-tabNav-tabSelected"> </div>',
+            $closeBtn
+          );
           if ( obj.static ){
             $closeBtn.hide();
           }
@@ -1004,9 +1000,10 @@
 				var $$ = this,
 					o = $$.options,
 					ok = 1,
-					cont = this.getContainer(idx),
-					subtab = this.getSubTabNav(idx),
-					res = 1;
+					cont = $$.getContainer(idx),
+					subtab = $$.getSubTabNav(idx),
+					res = 1,
+          currentURL = $$.getCurrentURL(idx);
 
 				if ( $.isFunction(o.beforeClose) ){
 					if ( !o.beforeClose($$.element, idx, $$) ){
@@ -1020,7 +1017,7 @@
 					res = $$.list[idx].close(cont, $$.list[idx], idx);
 				}
 				var cfg = $$.list[idx],
-					after = false;
+            after = false;
 				if ( ($$.list[idx].afterClose !== undefined) && $.isFunction($$.list[idx].afterClose) ) {
 					after = $$.list[idx].afterClose;
 				}
@@ -1029,7 +1026,7 @@
 				if ( after ) {
 					after(cfg, idx);
 				}
-				if ( !non_activate && $$.list.length ){
+				if ( !non_activate ){
 					if ( idx < $$.options.selected ){
 						$$.options.selected--;
 					}
@@ -1039,6 +1036,13 @@
 						}
 						$$.activate($$.list[idx].currentURL ? $$.list[idx].currentURL : $$.list[idx].url, true);
 					}
+					else if ( !$$.list.length && $$.parent ){
+					  var url = $$.parent.tabNav("getCurrentURL", false, true),
+                pos = url.indexOf(currentURL);
+            if ( pos ){
+              $$.parent.tabNav("activate", url.substr(0, pos-1));
+            }
+          }
 				}
 				if ( res && $.isFunction(o.afterClose) ){
 					o.afterClose($$.element, idx, $$);
@@ -1083,7 +1087,7 @@
 			if ( (idx = this.getIndex(idx)) !== false ){
 				var tab = this.getTab(idx);
 				if ( !title ){
-					title = "Untitled";
+					title = appui.lng.untitled;
 				}
 				this.list[idx].title = title;
 				$(tab).children("span.k-link").html(title);
@@ -1091,82 +1095,61 @@
 			return this;
 		},
 
-		setColor: function(col, idx, setCss) {
-			if ( window.tinycolor ){
+    setColorSelector: function(col, idx){
+      if ( (idx = this.getIndex(idx)) !== false ) {
         var $$ = this,
+          bcol,
+          fcol,
           tab = $$.getTab(idx),
-          // Backgroud color inactive
-          bc = false,
-          // Backgroud color active
-          bca = false,
-          // Font color inactive
-          fc = false,
-          // Font color active
-          fca = false,
-          // TinyColor
-          tc = false,
-          res = {};
-
-        if ( $$.bgColorIsLight === null ){
-          var bg = $($$.getTab(idx)).css("backgroundColor");
-          $$.bgColorIsLight = (tinycolor(bg)).isLight();
-        }
-
-        if ( $.isArray(col) && col.length ){
-          bca = col[0];
-          if ( col[1] !== undefined ){
-            fca = col[1];
+          $tab = $(tab);
+        if (tab) {
+          if (!$$.colorIsDone) {
+            $$.bThemeColor = $tab.css("backgroundColor");
+            $$.fThemeColor = $tab.css("color");
           }
-        }
-        else {
-          bca = col;
-        }
-        if ( bca ){
-          // We'll lighten the active color to get the inactive color
-          bc = tinycolor(bca);
-          for ( var i = 1; i < 100; i++ ){
-            if ( $$.bgColorIsLight ){
-
-            }
-            bc = bc.lighten(i);
-            if ( bc.getLuminance() > 0.7 ){
-              bc = bc.toHexString();
-              break;
+          if (!appui.fn.isColor(col)) {
+            col = $$.fThemeColor;
+          }
+          $("div.ui-tabNav-tabSelected", tab).css("backgroundColor", col);
+          if (window.tinycolor) {
+            if (!$$.colorIsDone) {
+              $$.bColorIsLight = (tinycolor($$.bThemeColor)).isLight();
+              $$.fColorIsLight = (tinycolor($$.fThemeColor)).isLight();
             }
           }
-          if ( bc && bca ){
-            $$.set('bColor', bc, idx);
-            $$.set('bColorAct', bca, idx);
-          }
-          tc = tinycolor(bca);
-          if ( tc ){
-            if ( tc.getLuminance() < 0.7 ){
-              fca = fca ? fca : '#FFF';
-              fc = '#313131';
-            }
-            else {
-              fca = fca ? fca : '#000';
-              fc = '#FFF';
-            }
-            if ( fc && fca ){
-              $$.set('fColor', fc, idx);
-              $$.set('fColorAct', fca, idx);
-            }
+          $$.colorIsDone = true;
+        }
+      }
+    },
+
+		setColor: function(bcol, fcol, idx, dontSetSelector) {
+      var $$ = this;
+      if ( (idx = $$.getIndex(idx)) !== false ) {
+        var tab = $$.getTab(idx),
+            $tab = $(tab);
+        if (tab) {
+          $tab.css("backgroundColor", appui.fn.isColor(bcol) ? bcol : null);
+          $tab.children().not(".ui-tabNav-tabSelected").css("color", appui.fn.isColor(fcol) ? fcol : null);
+          if ( !dontSetSelector ){
+            $$.setColorSelector(obj.fcolor ? obj.fcolor : false, idx);
           }
         }
       }
-		},
+      return $$;
+    },
 
     activateColor: function(idx, oldSelected){
       var $$ = this,
           o = $$.options;
       if ( $$.isValidIndex(idx) ){
         // Change tab color if defined
-        if ( $$.list[idx].bColorAct && $$.list[idx].fColorAct ) {
+        if ( $$.list[idx].bcolor && $$.list[idx].fcolor ) {
           $($$.getTab(idx)).animate({
             backgroundColor: $$.list[idx].bColorAct
-          }).children().animate({
+          }).children().not(".ui-tabNav-tabSelected").animate({
             color: $$.list[idx].fColorAct
+          }).siblings(".ui-tabNav-tabSelected").animate({
+            backgroundColor: $$.list[idx].fColorAct
           });
         }
         if ( $$.isValidIndex(oldSelected) && ($$.list[idx].url !== $$.getObs(oldSelected).url) ){
@@ -1174,8 +1157,10 @@
             //appui.fn.log($$.list[oldSelected].bColor +'/'+ $$.list[oldSelected].fColor);
             $($$.getTab(oldSelected)).animate({
               backgroundColor: $$.list[oldSelected].fColor
-            }).children().animate({
+            }).children().not(".ui-tabNav-tabSelected").animate({
               color: $$.list[oldSelected].bColor
+            }).siblings(".ui-tabNav-tabSelected").animate({
+              backgroundColor: $$.list[idx].fColor
             });
           }
         }
@@ -1202,10 +1187,19 @@
 					$cont.removeData("appui-tabnav-callonce");
 				}
 				if ( with_title ) {
-					$$.setTitle(" ", idx);
+					$$.setTitle(false, idx);
 				}
 			}
 		},
+
+    reload: function(idx){
+		  var $$ = this;
+		  if ( (idx = $$.getIndex(idx)) !== false ){
+		    var url = $$.getFullBaseURL() + $$.list[idx].currentURL;
+        $$.reset(idx);
+        $$.loadContent(url);
+      }
+    },
 
 		set: function(prop, val, idx){
 			var $$ = this,
@@ -1381,9 +1375,17 @@
 		loadContent: function(fullURL){
 			var $$ = this,
           change = false,
-          data = {
-            appui_baseURL: $$.getFullBaseURL()
-          };
+          length = -1,
+          data = {};
+
+      $.each($.ui.tabNav.globalList, function(i, v){
+        if ( fullURL.indexOf(v) === 0 ){
+          if ( v.length > length ){
+            length = v.length;
+            data.appui_baseURL = v;
+          }
+        }
+      });
 			if ( $.ui.tabNav.globalChange ){
 				data.appui_tabnav = $.ui.tabNav.globalList;
 				$.ui.tabNav.globalChange = false;
@@ -1404,9 +1406,9 @@
 		// Changes the position of a tab, relatively to others
 		move: function(old_idx, idx){
 			var $$ = this,
-				o = $$.options,
-				old_idx = $$.getIndex(old_idx),
-				idx = $$.getIndex(idx);
+				o = $$.options;
+      old_idx = $$.getIndex(old_idx),
+      idx = $$.getIndex(idx);
 			if ( (old_idx !== false) && (idx !== false) && (idx !== old_idx) ){
 				var tab = $($$.getTab(old_idx)),
 					cont = $($$.getContainer(old_idx)),
@@ -1432,7 +1434,7 @@
 		},
 
 		isValidIndex: function(idx){
-			return this.list[idx] !== undefined;
+			return (typeof(idx) === "number") && (this.list[idx] !== undefined);
 		},
 
 		// Gets the index of a tab from various parameters: index (!), URL, a DOM element (or jQuery object) inside a tab, a tab, or the currently selected index if there is no argument
@@ -1461,12 +1463,6 @@
 						idx = p.length ? p.children("div[role=tabpanel]").index(idx) : -1;
 					}
 				}
-				/*
-				else if ( o.current ){
-					idx = o.current;
-					o.current = false;
-				}
-				*/
 				else if ( o.selected > -1 ){
 					idx = o.selected;
 				}
@@ -1542,7 +1538,7 @@
 									text: appui.lng.reload,
 									fn: function (i, ob) {
 										//appui.fn.log(ob);
-										$$.reload(appui.env.path);
+										$$.reload(idx);
 									}
 								});
 								if ($$.list[idx].pinned) {
@@ -1633,7 +1629,7 @@
 		},
 
     isAutoload: function(){
-		  return this.options.autoload ? true : false;
+		  return !!this.options.autoload;
     },
 
 		// Based on this.isChanged
@@ -1722,9 +1718,8 @@
     },
     removeTabNav: function(ele){
       var baseURL = ele.tabNav("getFullBaseURL");
-      //appui.fn.log("removeTabNav", baseURL);
       $.ui.tabNav.globalList = $.grep($.ui.tabNav.globalList, function(url){
-        return (url !== baseURL) && (url.indexOf(baseURL) !== 0) ? true : false;
+        return !!((url !== baseURL) && (url.indexOf(baseURL) !== 0));
       });
       $.ui.tabNav.globalChange = 1;
     },
@@ -1737,7 +1732,7 @@
         title: 'Untitled',
         url: false,
         pinned: false,
-        data: {},
+        data: {}
       };
       if ( (typeof(obj) === 'object') && obj.url ){
         //appui.fn.log("HAS URL1", obj, JSON.stringify(def));
