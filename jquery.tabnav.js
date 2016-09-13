@@ -2,10 +2,15 @@
  * @fileOverview
  * @version 2.0
  *
- * @namespace jQuery.ui.tabNav
  */
 (function($){
   "use strict";
+  /**
+   * @namespace jQuery.ui.tabNav
+   * @namespace window.kendo
+   * @namespace window.store
+   * @namespace window.appui
+   */
 
   if ( !window.appui ){
     alert("appui library is mandatory");
@@ -17,8 +22,12 @@
   }
 
   var
+    appui = window.appui,
+    kendo = window.kendo,
+    store = false,
     prefix = "appui-tabNav-node-",
     _storageHas = function(){
+      /** @namespace window.store */
       return window.store !== undefined;
     },
 
@@ -36,6 +45,9 @@
 
     _storageInit = function(force){
       if ( _storageHas() ){
+        if ( !store ){
+          store = window.store;
+        }
         var storage = _storageGet();
         if ( !storage || force ){
           storage = {};
@@ -71,14 +83,20 @@
       return res;
     },
 
-    _storageItem = function(url, storage){
+    _storageItem = function(url, storage, deleteItem){
       for ( var n in storage ){
         if ( (url === n) || (url.indexOf(n+'/') === 0) ){
           if ( url === n ){
-            return storage[n];
+            if ( deleteItem ){
+              delete storage[n];
+              return 1;
+            }
+            else{
+              return storage[n];
+            }
           }
           else if ( storage[n].list !== undefined ){
-            var r = _storageItem(url.substr(n.length+1), storage[n].list);
+            var r = _storageItem(url.substr(n.length+1), storage[n].list, deleteItem);
             // If it doesn't exist we create it
             if ( !r ){
               storage[n].list[url.substr(n.length+1)] = {};
@@ -131,19 +149,16 @@
       }
     },
 
-    _storageRemove = function(url, baseurl){
+    _storageRemove = function(url){
       if ( _storageHas() ){
-        var storage = store.get("tabNav");
-        if ( storage[baseurl][url] ){
-          delete storage[baseurl][url];
-          store.set("tabNav", storage);
-        }
+        var storage = _storageGet();
+        _storageItem(url, storage, true);
+        _storageSet(storage);
       }
     },
 
     _storageEmpty = function(url){
       if ( _storageHas() ){
-        var storage = store.get("tabNav");
         store.set("tabNav", {});
       }
     };
@@ -191,7 +206,7 @@
           o = $$.options,
           parent = $$.element.closest("." + this.widgetFullName),
           url;
-      appui.fn.log("INITIAL", o.list.length, JSON.stringify(o.list), $$.element);
+      //appui.fn.log("INITIAL", o.list.length, JSON.stringify(o.list), $$.element);
 
 			// Will be set on 1 at the end of this function
 			$$.isLoaded = false;
@@ -263,7 +278,7 @@
 				scrollable: o.scrollable ? { distance: 300 } : false,
 				tabPosition: o.tabPosition,
 				activate: function(e){
-					$$.onActivate(e.item);
+          $$.onActivate(e.item);
 				}
 			}).data("kendoTabStrip");
 
@@ -272,7 +287,7 @@
 
       $$.bThemeColor = $$.element.css("backgroundColor");
       $$.fThemeColor = $$.element.css("color");
-      appui.fn.log("COLORS: " + $$.bThemeColor  + "/" + $$.fThemeColor);
+      //appui.fn.log("COLORS: " + $$.bThemeColor  + "/" + $$.fThemeColor);
 
       // Through internal storage a popup will show up asking the user
       // if he wants to reopen previous tabs showing the stored tree
@@ -282,20 +297,25 @@
         if ( !$$.parent ) {
           // The restoration content
           var readonly_ids = [],
+              ids = [],
               _storageTree = function(optionList, part, baseurl) {
                 if (!part) {
                   part = _storageGet();
                   baseurl = '';
                 }
-                var st = false, disabled, id;
+                var st = false,
+                    disabled,
+                    id;
                 for (var n in part) {
                   disabled = '';
                   id = baseurl + part[n].url;
+                  ids.push(id);
                   if (!st) {
                     st = '<ul>';
                   }
                   //appui.fn.log("URL", appui.env.path);
                   if (
+                    part[n].static ||
                     (optionList.length && appui.fn.get_row(optionList, "url", part[n].url)) ||
                     (appui.env.path && (
                       (id === appui.env.path) ||
@@ -320,8 +340,11 @@
                 return st;
               },
               content = _storageTree(o.list);
-          if ( content.length ) {
-            if (confirm("Do you want to load the previously opened tabs?")) {
+
+          if ( content.length && (readonly_ids.length !== ids.length) ) {
+
+            if ( confirm($.ui.tabNav.lng.open_previous_tabs) ){
+
               // Opening restoration window
               appui.fn.alert(
                 '<div class="appui-form-full">' + content + '</div>' +
@@ -349,43 +372,44 @@
                   var treeInst = $tree.fancytree("getTree");
 
                   // Click on confirm
-                  cont.find("button.k-button:first").click(function () {
+                  cont.find("button.k-button:first").click(function(){
                     var loop = function(ar, list, baseurl){
-                          if ( !baseurl ){
-                            baseurl = '';
-                          }
-                          if ( $.isArray(ar) && ar.length ){
-                            $.each(ar, function(i, v){
-                              appui.fn.log("V", v);
-                              var idx,
-                                  obj = {
-                                    url: v.data.url,
-                                    title: v.title,
-                                    load: true,
-                                    current: v.data.current
-                                  };
-                              if ( v.partsel ){
-                                idx = appui.fn.search(list, "url", v.data.url);
-                                if ( idx === -1 ){
-                                  idx = appui.fn.search(list, "url", v.data.url+'/', "starti");
-                                }
-                                if ( idx > -1 ){
-                                  $.extend(list[idx], obj);
-                                }
-                                else{
-                                  idx = list.length;
-                                  list.push(obj);
-                                }
-                                if ( v.children ){
-                                  if ( list[idx].list === undefined ){
-                                    list[idx].list = [];
-                                  }
-                                  loop(v.children, list[idx].list, v.key + '/');
-                                }
+                      if ( !baseurl ){
+                        baseurl = '';
+                      }
+                      if ( $.isArray(ar) && ar.length ){
+                        $.each(ar, function(i, v){
+                          //appui.fn.log("V", v);
+                          var idx,
+                              obj = {
+                                url: v.data.url,
+                                title: v.title,
+                                load: true,
+                                content: $.ui.tabNav.getLoader(),
+                                current: v.data.current
+                              };
+                          if ( v.partsel ){
+                            idx = appui.fn.search(list, "url", v.data.url);
+                            if ( idx === -1 ){
+                              idx = appui.fn.search(list, "url", v.data.url+'/', "starti");
+                            }
+                            if ( idx > -1 ){
+                              $.extend(list[idx], obj);
+                            }
+                            else{
+                              idx = list.length;
+                              list.push(obj);
+                            }
+                            if ( v.children ){
+                              if ( list[idx].list === undefined ){
+                                list[idx].list = [];
                               }
-                            })
+                              loop(v.children, list[idx].list, v.key + '/');
+                            }
                           }
-                        };
+                        })
+                      }
+                    };
                     loop(treeInst.rootNode.children, o.list);
                     appui.fn.closeAlert();
                     _storageInit(true);
@@ -423,14 +447,14 @@
         var idx = $$.parent.tabNav("getIndex", $$.element),
             obj = $$.parent.tabNav("getObs", idx),
             k;
-        appui.fn.log("LIST", $$.element, JSON.stringify(obj.list), JSON.stringify(o.list));
+        //appui.fn.log("LIST", $$.element, JSON.stringify(obj.list), JSON.stringify(o.list));
         // Preloaded list from session
         if ( obj && obj.list && obj.list.length ){
           //alert("STOP");
           //appui.fn.log("INIT", obj, o);
           $.each(obj.list, function(i, v){
             k = appui.fn.search(o.list, "url", v.url, "startsi");
-            appui.fn.log("K", k, JSON.stringify(o.list), v.url);
+            //appui.fn.log("K", k, JSON.stringify(o.list), v.url);
             if ( k > -1 ){
               $.extend(o.list[k], v);
             }
@@ -438,7 +462,7 @@
               o.list.push(v);
             }
           });
-          appui.fn.log("LIST2", $$.element, JSON.stringify(obj.list), JSON.stringify(o.list));
+          //appui.fn.log("LIST2", $$.element, JSON.stringify(obj.list), JSON.stringify(o.list));
         }
       }
       // Creation of an initial tab configuration
@@ -448,9 +472,9 @@
           $$.add(v, i);
         });
       }
+      //appui.fn.log("---------INIT", o.current, appui.env.path, $$.getFullBaseURL(), appui.env.path.substr($$.getFullBaseURL().length));
       //appui.fn.log("AFTER", o.list, $$.list);
       if ( o.current ){
-        appui.fn.log("hasCurrent", o.current);
         //appui.fn.log("CURRENT IS " + o.current);
         $$.activate(o.current);
         /** @todo check why o.current is set to false */
@@ -459,6 +483,10 @@
       // The page is loading first time
       else if ( !appui.env.old_path && (url = appui.env.path.substr($$.getFullBaseURL().length)) ){
         //appui.fn.log("URL IS " + url);
+        $$.activate(url);
+      }
+      else if ( (appui.env.path.indexOf($$.getFullBaseURL()) === 0) && (url = appui.env.path.substr($$.getFullBaseURL().length)) ){
+        appui.fn.log("------------------------- URL IS " + url);
         $$.activate(url);
       }
       else{
@@ -528,17 +556,27 @@
 		},
 
 		// Returns the current URL from the root tabNav without the hostname (if it has a baseURL it will start after)
-		getFullURL: function(){
+		getFullURL: function(idx){
 		  var $$ = this;
-			return $$.parent ?
-        $$.parent.tabNav("getFullURL") :
-        $$.getBaseURL() + ($$.currentURL ? $$.currentURL : '');
+      if ( (idx !== undefined) && $$.list[idx] ){
+        return $$.getFullBaseURL() + $$.list[idx].url;
+      }
+      return $$.getBaseURL() + ($$.currentURL ? $$.currentURL : '');
 		},
 
 		// Returns the baseURL property
 		getBaseURL: function(){
 			return this.baseURL;
 		},
+
+    getFullCurrentURL: function(idx, force){
+      var $$ = this,
+          url = $$.getCurrentURL(idx, force);
+      if ( url !== false ){
+        return $$.getFullBaseURL() + url;
+      }
+		  return false;
+    },
 
     getCurrentURL: function(idx, force){
       var $$ = this;
@@ -627,7 +665,7 @@
           $$.changeOK();
           /** @todo how rep state is changed? Is it of any use? */
           //appui.fn.log("new URL: " + $$.getFullURL());
-          appui.fn.setNavigationVars($$.getFullURL(), o.baseTitle + $$.list[idx].title, $$.getData(idx), false);
+          appui.fn.setNavigationVars($$.getFullBaseURL() + url, o.baseTitle + $$.list[idx].title, $$.getData(idx), false);
         }
       }
       return $$;
@@ -644,6 +682,8 @@
 					this.activate(this.list[idx].currentURL ? this.list[idx].currentURL : this.list[idx].url);
 				}
 			}
+      $($$.getContainer(idx)).addClass("appui-full-height");
+      $$.element.redraw();
 		},
 
 		activateIdx: function(idx, force){
@@ -682,12 +722,14 @@
 		 */
 		activate: function(url, force){
 
+
 			// if no parameter is passed we use the current url
 			var $$ = this,
 				o = $$.options,
 				idx;
 			// either the requested url or the url corresponding to the target index
 
+      appui.fn.log("ACTIV", url, $$.getBaseURL(), $$.element);
 
 			// No URL has been given -> we activate the default tab
 			if ( !url ){
@@ -751,7 +793,7 @@
 				// If it's not already activated we do programmatically, it won't execute the callback function
 				if ( !$tab.hasClass("k-state-active") ){
 					$$.wid.activateTab($tab);
-					if ( $$.isLoaded ){
+					if ( $$.isLoaded || $$.parent ){
 						return this;
 					}
 				}
@@ -759,8 +801,9 @@
 
 			// In this case the tab exists but we load its content the first time it is activated
 			if ( $$.list[idx].load ){
-			  //appui.fn.log("loading content from list load parameter");
+			  appui.fn.log("loading content from list load parameter");
 				$$.list[idx].load = false;
+        $$.setContent($.ui.tabNav.getLoader(), idx);
 				$$.loadContent($$.getFullBaseURL() + url);
 				return $$;
 			}
@@ -783,7 +826,7 @@
 
 				// If there is a callonce attached to this index we execute it and delete it
 				if ( $$.list[idx].callonce ) {
-				  appui.fn.log("callonce", $$.list[idx].callonce.toString());
+				  //appui.fn.log("callonce", $$.list[idx].callonce.toString());
 					$$.list[idx].callonce(cont, idx, $$.list[idx].data, $$);
 					$cont.data("appui-tabnav-callonce", $$.list[idx].callonce);
 					$$.list[idx].callonce = false;
@@ -955,7 +998,7 @@
           }
           else if (idx < $$.list.length) {
             $$.list.splice(idx, 0, obj);
-            $$.wid.insertBefore(r, $$.getTab(idx));
+            $$.wid.insertBefore(kendoCfg, $$.getTab(idx));
           }
           else {
             throw new Error("Wrong tab index!");
@@ -987,10 +1030,14 @@
 				else{
 				  idx = newIndex;
         }
+        if ( $$.list[idx] ){
+          $$._setTab(obj, idx);
+          return idx;
+        }
 			}
-			if ( $$.list[idx] ){
-        $$._setTab(obj, idx);
-        return idx;
+			else{
+        appui.fn.log(obj);
+        throw new Error("The URL of the tab is not defined");
       }
       return false;
 		},
@@ -1021,6 +1068,7 @@
 				if ( ($$.list[idx].afterClose !== undefined) && $.isFunction($$.list[idx].afterClose) ) {
 					after = $$.list[idx].afterClose;
 				}
+        _storageRemove($$.getFullURL(idx));
 				$$.list.splice(idx, 1);
 				$$.wid.remove(idx);
 				if ( after ) {
@@ -1131,7 +1179,7 @@
           $tab.css("backgroundColor", appui.fn.isColor(bcol) ? bcol : null);
           $tab.children().not(".ui-tabNav-tabSelected").css("color", appui.fn.isColor(fcol) ? fcol : null);
           if ( !dontSetSelector ){
-            $$.setColorSelector(obj.fcolor ? obj.fcolor : false, idx);
+            $$.setColorSelector(fcol ? fcol : false, idx);
           }
         }
       }
@@ -1173,7 +1221,7 @@
           o = $$.options;
 			idx = $$.getIndex(idx);
 			if ( idx !== false ) {
-				$$.setContent(" ", idx);
+				$$.setContent(' ', idx);
 				$$.list[idx] = {url: $$.list[idx].url, title: $$.list[idx].title};
 				var $cont = $$.getContainer(idx),
 					tab = $$.getTab(idx),
@@ -1197,6 +1245,7 @@
 		  if ( (idx = $$.getIndex(idx)) !== false ){
 		    var url = $$.getFullBaseURL() + $$.list[idx].currentURL;
         $$.reset(idx);
+        $$.setContent($.ui.tabNav.getLoader(), idx);
         $$.loadContent(url);
       }
     },
@@ -1352,21 +1401,26 @@
 			}
 			var ele,
           url = $$.parseURL(fullURL),
+          // Prox index
           idx = $$.search(url),
+          // Strict index
           sidx = $$.search(url, true);
 
-			//appui.fn.log("Method: link - line: 1322 - INDEX: " + idx + " - URL: " + url, $$.element);
+			appui.fn.log("Method: link - line: 1407 - INDEX: " + idx + " - URL: " + url, $$.element);
 
+			if ( force ){
+        $$.loadContent(fullURL);
+      }
 			if ( idx != -1 ){
-				$$.activate(url);
+				$$.activate(url, force);
         ele = $$.getSubTabNav(idx);
 				if ( ele.length && (sidx == -1) ){
-					//appui.fn.log("LINK FN");
-					ele.tabNav("link", fullURL, force);
+					appui.fn.log("LINK FN");
+					ele.tabNav("activate", $(ele).tabNav("parseURL", fullURL));
 					return;
 				}
 			}
-			if ( (idx == -1) || force ){
+			else {
 				//appui.fn.log("loadContent FN: " + url);
 				$$.loadContent(fullURL);
 			}
@@ -1386,15 +1440,17 @@
           }
         }
       });
-			if ( $.ui.tabNav.globalChange ){
-				data.appui_tabnav = $.ui.tabNav.globalList;
-				$.ui.tabNav.globalChange = false;
-			}
 			appui.fn.post(fullURL, data, function(obj){
 				if ( obj && obj.content ){
           if ( !obj.url ){
-            obj.url = $$.parseURL(fullURL);
+            obj.url = fullURL;
           }
+          obj.url = $$.parseURL(obj.url);
+          var url = $$.parseURL(fullURL);
+          if ( !obj.current && (obj.url !== url) ){
+            obj.current = url;
+          }
+          //appui.fn.log("LOAD", obj.url, fullURL);
 					/** @todo shouldn't the subtab load also if the remaining url is not empty */
 					$$.navigate(obj);
 				}
@@ -1496,6 +1552,7 @@
 				i;
 
 			// We look for at tab eith the same URL, full or partial
+      //appui.fn.log("SEARCH FROM " + url + (strict ? " WITH " : " WITHOUT ") + "STRICT", $$.element, $$.list);
 			while ( tmp !== '' ){
 				i = appui.fn.search($$.list, "url", tmp);
 				if ( i > -1 ){
@@ -1510,6 +1567,7 @@
 					tmp = '';
 				}
 			}
+      //appui.fn.log("SEARCH FAILED");
 			// If not found we return -1
 			return -1;
 		},
@@ -1705,12 +1763,10 @@
 
     version: "0.2",
     globalList: [],
-    globalChange: false,
     addTabNav: function(ele){
       var baseURL = ele.tabNav("getFullBaseURL");
       if ( $.inArray(baseURL, $.ui.tabNav.globalList) === -1 ){
         $.ui.tabNav.globalList.push(baseURL);
-        $.ui.tabNav.globalChange = 1;
       }
       if ( ele.tabNav("isAutoload") ){
         _storageAddTabNav(baseURL);
@@ -1721,7 +1777,6 @@
       $.ui.tabNav.globalList = $.grep($.ui.tabNav.globalList, function(url){
         return !!((url !== baseURL) && (url.indexOf(baseURL) !== 0));
       });
-      $.ui.tabNav.globalChange = 1;
     },
     defaultObj: function(obj, widget){
       //appui.fn.log("BEFORE DEFAULT", obj);
@@ -1755,8 +1810,14 @@
         //appui.fn.log("HAS URL2", r);
         return r;
       }
-      return def;
+      return false;
     },
-    resize: false
+    getLoader: function(){
+      return '<div class="ui-tabNav-loader"><div class="loader-animation"><div class="sk-cube-grid"><div class="sk-cube sk-cube1"></div><div class="sk-cube sk-cube2"></div><div class="sk-cube sk-cube3"></div><div class="sk-cube sk-cube4"></div><div class="sk-cube sk-cube5"></div><div class="sk-cube sk-cube6"></div><div class="sk-cube sk-cube7"></div><div class="sk-cube sk-cube8"></div><div class="sk-cube sk-cube9"></div></div><h1>' + appui.lng.loading + '</h1></div></div>';
+    },
+    resize: false,
+    lng: {
+      open_previous_tabs: "Do you want to load the previously opened tabs?"
+    }
   });
 })(jQuery);
