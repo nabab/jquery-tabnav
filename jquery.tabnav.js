@@ -282,6 +282,8 @@
 				}
 			}).data("kendoTabStrip");
 
+			$$.wrapper = $$.element.parent().addClass("appui-full-height").redraw();
+
 			// Adds to the list array of the tabNav instances
 			$.ui.tabNav.addTabNav($$.element);
 
@@ -289,153 +291,9 @@
       $$.fThemeColor = $$.element.css("color");
       //appui.fn.log("COLORS: " + $$.bThemeColor  + "/" + $$.fThemeColor);
 
-      // Through internal storage a popup will show up asking the user
-      // if he wants to reopen previous tabs showing the stored tree
-      // Conditions for tabs restoration
-      if ( _storageHas() && $.jstree && o.autoload ) {
-        // Asking if we want to restore only for top tabNav
-        if ( !$$.parent ) {
-          // The restoration content
-          var readonly_ids = [],
-              ids = [],
-              _storageTree = function(optionList, part, baseurl) {
-                if (!part) {
-                  part = _storageGet();
-                  baseurl = '';
-                }
-                var st = false,
-                    disabled,
-                    id;
-                for (var n in part) {
-                  disabled = '';
-                  id = baseurl + part[n].url;
-                  ids.push(id);
-                  if (!st) {
-                    st = '<ul>';
-                  }
-                  //appui.fn.log("URL", appui.env.path);
-                  if (
-                    part[n].static ||
-                    (optionList.length && appui.fn.get_row(optionList, "url", part[n].url)) ||
-                    (appui.env.path && (
-                      (id === appui.env.path) ||
-                      ((baseurl + part[n].current) === appui.env.path)
-                    ))
-                  ){
-                    disabled = ' data-selected="true"';
-                    readonly_ids.push(id);
-                  }
-                  st += '<li data-expanded="true" data-url="' + part[n].url + '" data-current="' + (part[n].current ? part[n].current : part[n].url) + '"' + disabled + ' data-key="' + id + '">' + part[n].title;
-                  if ( part[n].list ) {
-                    var subTree = _storageTree([], part[n].list, baseurl + part[n].url + '/');
-                    if (subTree) {
-                      st += subTree;
-                    }
-                  }
-                  st += '</li>';
-                }
-                if (st) {
-                  st += '</ul>';
-                }
-                return st;
-              },
-              content = _storageTree(o.list);
-
-          if ( content.length && (readonly_ids.length !== ids.length) ) {
-
-            if ( confirm($.ui.tabNav.lng.open_previous_tabs) ){
-
-              // Opening restoration window
-              appui.fn.alert(
-                '<div class="appui-form-full">' + content + '</div>' +
-                '<div class="appui-c appui-form-full">' +
-                '<button class="k-button"><i class="fa fa-check"> </i> OK</button>' +
-                '<button class="k-button"><i class="fa fa-times"> </i> Cancel</button>' +
-                '</div>',
-                "What to restore", 500, {actions: []}, function (cont) {
-                  // JSTree creation
-                  var $tree = cont.find(".appui-form-full:first");
-                  $tree.fancytree({
-                    checkbox: true,
-                    selectMode: 3,
-                    select: function(ev, data){
-                      cont.find(".fancytree-active").removeClass("fancytree-active");
-                    },
-                    click: function(ev, data){
-                      if ( $.inArray(data.node.key, readonly_ids) > -1 ){
-                        ev.stopImmediatePropagation();
-                        ev.preventDefault();
-                        return false;
-                      }
-                    }
-                  });
-                  var treeInst = $tree.fancytree("getTree");
-
-                  // Click on confirm
-                  cont.find("button.k-button:first").click(function(){
-                    var loop = function(ar, list, baseurl){
-                      if ( !baseurl ){
-                        baseurl = '';
-                      }
-                      if ( $.isArray(ar) && ar.length ){
-                        $.each(ar, function(i, v){
-                          //appui.fn.log("V", v);
-                          var idx,
-                              obj = {
-                                url: v.data.url,
-                                title: v.title,
-                                load: true,
-                                content: $.ui.tabNav.getLoader(),
-                                current: v.data.current
-                              };
-                          if ( v.partsel ){
-                            idx = appui.fn.search(list, "url", v.data.url);
-                            if ( idx === -1 ){
-                              idx = appui.fn.search(list, "url", v.data.url+'/', "starti");
-                            }
-                            if ( idx > -1 ){
-                              $.extend(list[idx], obj);
-                            }
-                            else{
-                              idx = list.length;
-                              list.push(obj);
-                            }
-                            if ( v.children ){
-                              if ( list[idx].list === undefined ){
-                                list[idx].list = [];
-                              }
-                              loop(v.children, list[idx].list, v.key + '/');
-                            }
-                          }
-                        })
-                      }
-                    };
-                    loop(treeInst.rootNode.children, o.list);
-                    appui.fn.closeAlert();
-                    _storageInit(true);
-                    $$._initialize();
-                  });
-
-                  // Click on cancel
-                  cont.find("button.k-button:last").click(function () {
-                    appui.fn.closeAlert();
-                    _storageInit(true);
-                    $$._initialize();
-                  });
-                });
-              return this;
-            }
-            // Don't confirm
-            else {
-              _storageInit(true);
-            }
-          }
-        }
-        // If we are in a child tabNav, we compare the content to be restored to the option's list
-        else{
-        }
+      if ( !$$._windowStorage() ){
+        $$._initialize();
       }
-      $$._initialize();
 			return this;
 		},
 
@@ -486,7 +344,7 @@
         $$.activate(url);
       }
       else if ( (appui.env.path.indexOf($$.getFullBaseURL()) === 0) && (url = appui.env.path.substr($$.getFullBaseURL().length)) ){
-        appui.fn.log("------------------------- URL IS " + url);
+        //appui.fn.log("------------------------- URL IS " + url);
         $$.activate(url);
       }
       else{
@@ -495,6 +353,172 @@
       if ( !$$.isLoaded ){
         $$.isLoaded = true;
       }
+    },
+
+    _windowStorage: function(){
+      var $$ = this,
+          o = $$.options;
+      // Through internal storage a popup will show up asking the user
+      // if he wants to reopen previous tabs showing the stored tree
+      // Conditions for tabs restoration
+      // Asking if we want to restore only for top tabNav
+      if ( _storageHas() && $.jstree && o.autoload && !$$.parent ) {
+        // The restoration content
+        var readonly_ids = [],
+          ids = [],
+          _storageTree = function(optionList, part, baseurl) {
+            if (!part) {
+              part = _storageGet();
+              baseurl = '';
+            }
+            var st = false,
+              disabled,
+              id;
+            for (var n in part) {
+              disabled = '';
+              id = baseurl + part[n].url;
+              ids.push(id);
+              if (!st) {
+                st = '<ul>';
+              }
+              //appui.fn.log("URL", appui.env.path);
+              if (
+                part[n].static ||
+                (optionList.length && appui.fn.get_row(optionList, "url", part[n].url)) ||
+                (appui.env.path && (
+                  (id === appui.env.path) ||
+                  ((baseurl + part[n].current) === appui.env.path)
+                ))
+              ){
+                disabled = ' data-selected="true"';
+                readonly_ids.push(id);
+              }
+              st += '<li data-expanded="true" data-url="' + part[n].url + '" data-current="' + (part[n].current ? part[n].current : part[n].url) + '"' + disabled + ' data-key="' + id + '">' + part[n].title;
+              if ( part[n].list ) {
+                var subTree = _storageTree([], part[n].list, baseurl + part[n].url + '/');
+                if (subTree) {
+                  st += subTree;
+                }
+              }
+              st += '</li>';
+            }
+            if (st) {
+              st += '</ul>';
+            }
+            return st;
+          },
+          content = _storageTree(o.list);
+
+        if ( content.length && (readonly_ids.length !== ids.length) ) {
+
+          if ( confirm($.ui.tabNav.lng.open_previous_tabs) ){
+
+            // Opening restoration window
+            appui.fn.alert(
+              '<div><input id="appui_tabnav_checkbox_all" class="k-checkbox" type="checkbox" value="1"><label class="k-checkbox-label" for="appui_tabnav_checkbox_all">' + $.ui.tabNav.lng.check_uncheck_all + '</label></div>' +
+              '<div class="appui-form-full">' + content + '</div>' +
+              '<div class="appui-c appui-form-full">' +
+              '<button class="k-button"><i class="fa fa-check"> </i> OK</button>' +
+              '<button class="k-button"><i class="fa fa-times"> </i> Cancel</button>' +
+              '</div>',
+              "What to restore", 500, {actions: []}, function (cont) {
+                // JSTree creation
+                var $tree = cont.find(".appui-form-full:first");
+                $tree.fancytree({
+                  checkbox: true,
+                  selectMode: 3,
+                  select: function(ev, data){
+                    cont.find(".fancytree-active").removeClass("fancytree-active");
+                  },
+                  click: function(ev, data){
+                    if ( $.inArray(data.node.key, readonly_ids) > -1 ){
+                      ev.stopImmediatePropagation();
+                      ev.preventDefault();
+                      return false;
+                    }
+                  }
+                });
+                var treeInst = $tree.fancytree("getTree"),
+                    toCheck = true;
+
+                $("#appui_tabnav_checkbox_all", cont).click(function(){
+                  $(".fancytree-node", cont).each(function(){
+                    if ( toCheck ){
+                      if ( !$(this).hasClass("fancytree-selected") ){
+                        $(".fancytree-checkbox", this).click();
+                      }
+                    }
+                    else{
+                      if ( $(this).hasClass("fancytree-selected") ){
+                        $(".fancytree-checkbox", this).click();
+                      }
+                    }
+                  });
+                  toCheck = !toCheck;
+                });
+
+                // Click on confirm
+                cont.find("button.k-button:first").click(function(){
+                  var loop = function(ar, list, baseurl){
+                    if ( !baseurl ){
+                      baseurl = '';
+                    }
+                    if ( $.isArray(ar) && ar.length ){
+                      $.each(ar, function(i, v){
+                        //appui.fn.log("V", v);
+                        var idx,
+                          obj = {
+                            url: v.data.url,
+                            title: v.title,
+                            load: true,
+                            content: $.ui.tabNav.getLoader(),
+                            current: v.data.current
+                          };
+                        if ( v.partsel ){
+                          idx = appui.fn.search(list, "url", v.data.url);
+                          if ( idx === -1 ){
+                            idx = appui.fn.search(list, "url", v.data.url+'/', "starti");
+                          }
+                          if ( idx > -1 ){
+                            $.extend(list[idx], obj);
+                          }
+                          else{
+                            idx = list.length;
+                            list.push(obj);
+                          }
+                          if ( v.children ){
+                            if ( list[idx].list === undefined ){
+                              list[idx].list = [];
+                            }
+                            loop(v.children, list[idx].list, v.key + '/');
+                          }
+                        }
+                      })
+                    }
+                  };
+                  loop(treeInst.rootNode.children, o.list);
+                  appui.fn.closeAlert();
+                  _storageInit(true);
+                  $$._initialize();
+                  return false;
+                });
+
+                // Click on cancel
+                cont.find("button.k-button:last").click(function () {
+                  appui.fn.closeAlert();
+                  _storageInit(true);
+                  $$._initialize();
+                  return false;
+                });
+              });
+            return this;
+          }
+          else{
+            _storageInit(true);
+          }
+        }
+      }
+      return false;
     },
 
 		/********************* Operations with URL ***************************************/
@@ -682,8 +706,6 @@
 					this.activate(this.list[idx].currentURL ? this.list[idx].currentURL : this.list[idx].url);
 				}
 			}
-      $($$.getContainer(idx)).addClass("appui-full-height");
-      $$.element.redraw();
 		},
 
 		activateIdx: function(idx, force){
@@ -1032,6 +1054,7 @@
         }
         if ( $$.list[idx] ){
           $$._setTab(obj, idx);
+          $($$.getContainer(idx)).addClass("appui-full-height");
           return idx;
         }
 			}
@@ -1281,7 +1304,7 @@
 					}
 				}
 				if ( change && (idx === this.options.selected) ){
-					this.resize();
+					this.resize(1);
 				}
 			}
 			return this;
@@ -1305,7 +1328,7 @@
 					}
 				}
 				if ( idx === this.options.selected ){
-					this.resize();
+					this.resize(1);
 				}
 			}
 			return this;
@@ -1550,9 +1573,9 @@
 				tmp = url,
 				slash,
 				i;
-
-			// We look for at tab eith the same URL, full or partial
       //appui.fn.log("SEARCH FROM " + url + (strict ? " WITH " : " WITHOUT ") + "STRICT", $$.element, $$.list);
+
+			// We look for at tab with the same URL, full or partial
 			while ( tmp !== '' ){
 				i = appui.fn.search($$.list, "url", tmp);
 				if ( i > -1 ){
@@ -1702,31 +1725,25 @@
 		},
 
 		// Resize the tab content and the subtabs
-		resize: function(){
+		resize: function(no_redraw){
 			if ( this.list[this.options.selected] ) {
 				var $$ = this,
 					o = $$.options,
-					idx = o.selected,
-					w,
-					tab = $$.element.children("div.k-content.k-state-active:first"),
-					subtab = tab.find("div." + $$.widgetFullName + ":first"),
-					subtabs = subtab.children("ul").children("li"),
-					containerHeight = $$.element.parent().hasClass("k-tabstrip-wrapper") ? $$.element.parent().parent().height() : $$.element.parent().height(),
-					titleHeight = parseInt($$.element.children("ul").outerHeight(true)),
-					mainMargin = parseInt(
-						parseFloat(tab.outerHeight(true)) -
-						parseFloat(tab.height())
-					);
-				tab.height(parseInt(containerHeight - (titleHeight + mainMargin))).redraw();
+					idx = o.selected;
+				if ( !no_redraw ){
+          $$.wrapper.redraw();
+        }
 
 				if ($.isFunction($$.list[idx].resize) ) {
 					$$.list[idx].resize(tab, $$.list[idx]);
 				}
+				/*
 				if (subtab.length > 0) {
 					subtab.tabNav("resize", tab, $$.list);
 				}
+				*/
 				if ( $.ui.tabNav.resize ){
-					$.ui.tabNav.resize(tab, $$.list[idx]);
+					$.ui.tabNav.resize($($$.getContainer(idx)), $$.list[idx]);
 				}
 				return 1;
 			}
@@ -1817,7 +1834,8 @@
     },
     resize: false,
     lng: {
-      open_previous_tabs: "Do you want to load the previously opened tabs?"
+      open_previous_tabs: "Do you want to load the previously opened tabs?",
+      check_uncheck_all: "Check/Uncheck all"
     }
   });
 })(jQuery);
