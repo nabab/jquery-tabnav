@@ -1304,7 +1304,7 @@
 					}
 				}
 				if ( change && (idx === this.options.selected) ){
-					this.resize(1);
+					this.resize();
 				}
 			}
 			return this;
@@ -1328,7 +1328,7 @@
 					}
 				}
 				if ( idx === this.options.selected ){
-					this.resize(1);
+					this.resize();
 				}
 			}
 			return this;
