@@ -24,6 +24,48 @@
   var
     appui = window.appui,
     kendo = window.kendo,
+    reorderableTabStrip = kendo.ui.TabStrip.extend({
+      options: {
+        name: 'ReorderableTabStrip'
+      },
+
+      init: function ( element, options ) {
+        kendo.ui.TabStrip.fn.init.call(this, element, options);
+        this.applyReorderable();
+      },
+
+      applyReorderable: function () {
+        var reorderable = this.tabGroup.data('kendoReorderable');
+        if ( reorderable ) {
+          reorderable.destroy();
+        }
+
+        this.tabGroup.kendoReorderable({
+          group: 'tabs',
+          filter:'.k-item',
+          hint: function(element) {
+            return element.clone().wrap('<ul class="k-tabstrip-items k-reset"/>').parent().css({opacity: 0.8});
+          },
+          change: $.proxy(this.onReorderableChange, this)
+        });
+      },
+
+      onReorderableChange: function ( event ) {
+        if ( event.newIndex < event.oldIndex ) {
+          this.tabGroup.children('.k-item:eq('+event.newIndex+')').before( this.tabGroup.children('.k-item:eq('+event.oldIndex+')') );
+          this.element.children('.k-content:eq('+event.newIndex+')').before( this.element.children('.k-content:eq('+event.oldIndex+')') );
+        }
+        else {
+          this.tabGroup.children('.k-item:eq('+event.newIndex+')').after( this.tabGroup.children('.k-item:eq('+event.oldIndex+')') );
+          this.element.children('.k-content:eq('+event.newIndex+')').after( this.element.children('.k-content:eq('+event.oldIndex+')') );
+        }
+        this.element.tabNav("move", event.oldIndex, event.newIndex);
+        this._updateClasses();
+      }
+    });
+  kendo.ui.plugin( reorderableTabStrip );
+
+  var
     store = false,
     prefix = "appui-tabNav-node-",
     _storageHas = function(){
@@ -183,6 +225,7 @@
 			beforeClose: false,
 			transform: false,
 			afterClose: false,
+      resize: false,
 			// Widget options
 			scrollable: false,
 			tabPosition: "top",
@@ -213,8 +256,10 @@
       $$.bColorIsLight = true;
       $$.fColorIsLight = false;
       $$.colorIsDone = false;
+      $$.hasRedraw = $.isFunction($.fn.redraw);
 			$$.closeClassSelector = "." + appui.fn.replaceAll(" ", ".", o.closeClass);
 			$$.menuClassSelector = "." + appui.fn.replaceAll(" ", ".", o.closeClass);
+      $$.tabsHeight = 0;
 			/**
 			 * current state of the list (of tabs) made of objects of this type:
 			 * {
@@ -246,6 +291,9 @@
 	     **/
 			$$.list = [];
 
+      // Will be used to not execute resize several times in a row
+      $$.resizeTimer = false;
+
 			// If set to true activate will be triggered - always the first time
 			$$.changed = true;
 
@@ -273,16 +321,14 @@
 			$$.updateBaseURL(o.baseURL);
 
 			/** @var wid Instance of the tabstrip widget - Creation */
-			$$.wid = $$.element.addClass(this.widgetFullName).kendoTabStrip({
+			$$.wid = $$.element.addClass(this.widgetFullName).kendoReorderableTabStrip({
 				animation:false,
 				scrollable: o.scrollable ? { distance: 300 } : false,
 				tabPosition: o.tabPosition,
 				activate: function(e){
           $$.onActivate(e.item);
 				}
-			}).data("kendoTabStrip");
-
-			$$.wrapper = $$.element.parent().addClass("appui-full-height").redraw();
+			}).data("kendoReorderableTabStrip");
 
 			// Adds to the list array of the tabNav instances
 			$.ui.tabNav.addTabNav($$.element);
@@ -422,6 +468,7 @@
               '<button class="k-button"><i class="fa fa-times"> </i> Cancel</button>' +
               '</div>',
               "What to restore", 500, {actions: []}, function (cont) {
+                $("#appui_tabnav_checkbox_all").focus()
                 // JSTree creation
                 var $tree = cont.find(".appui-form-full:first");
                 $tree.fancytree({
@@ -748,10 +795,9 @@
 			// if no parameter is passed we use the current url
 			var $$ = this,
 				o = $$.options,
-				idx;
+				idx
+        url = $$.parseURL(url);
 			// either the requested url or the url corresponding to the target index
-
-      appui.fn.log("ACTIV", url, $$.getBaseURL(), $$.element);
 
 			// No URL has been given -> we activate the default tab
 			if ( !url ){
@@ -781,12 +827,11 @@
 			}
 
 			// actual tab
-			var tab = $$.getTab(idx),
+			var $tab = $$.getTab(idx),
 				// Container
-				cont = $$.getContainer(idx),
+				$cont = $$.getContainer(idx),
 				// jQuery objects
-				$cont = $(cont),
-				$tab = $(tab),
+				cont = $cont[0],
 				// URL before activation
 				oldURL = $$.getFullURL(),
 				// Numeric index of the previously selected tab
@@ -823,11 +868,12 @@
 
 			// In this case the tab exists but we load its content the first time it is activated
 			if ( $$.list[idx].load ){
-			  appui.fn.log("loading content from list load parameter");
+			  //appui.fn.log("loading content from list load parameter");
 				$$.list[idx].load = false;
+        //$cont.redraw(1, 1);
         $$.setContent($.ui.tabNav.getLoader(), idx);
-				$$.loadContent($$.getFullBaseURL() + url);
-				return $$;
+        $$.loadContent($$.getFullBaseURL() + url);
+        return $$;
 			}
 			// Only if either:
 			// - the tabNav has never been activated
@@ -844,7 +890,8 @@
 					o.activate($$.element, idx, $$);
 				}
 
-				$$.resize();
+        $$.resize(false, force);
+        var resize = false;
 
 				// If there is a callonce attached to this index we execute it and delete it
 				if ( $$.list[idx].callonce ) {
@@ -852,16 +899,19 @@
 					$$.list[idx].callonce(cont, idx, $$.list[idx].data, $$);
 					$cont.data("appui-tabnav-callonce", $$.list[idx].callonce);
 					$$.list[idx].callonce = false;
-					$$.resize();
+          resize = 1;
 				}
 				// If there is a callback attached to this index we execute it
 				if ($$.list[idx].callback && !$$.list[idx].disabled) {
 					$$.list[idx].callback(cont, idx, $$.list[idx].data, $$);
-					$$.resize();
+          resize = 1;
 				}
-
         //appui.fn.log("_urlActivation: " + url);
         $$._urlActivation(url, idx, force);
+
+        if ( resize ){
+          $$.resize(!$tab.hasClass("appui-tabnav-resized"), 1);
+        }
 
         //$$.activateColor(idx, oldSelected);
 				//appui.fn.log("***COUNT****", $tab.length, $tab.siblings().length);
@@ -889,7 +939,7 @@
 
     getContainer: function(idx, force){
 			if ( ((idx = this.getIndex(idx, force)) !== false) && (this.wid.contentElements.length > idx) ){
-				return this.wid.contentElements[idx];
+				return $(this.wid.contentElements[idx]);
 			}
 		},
 
@@ -901,7 +951,7 @@
 
 		getTab: function(idx, force){
 			if ( (idx = this.getIndex(idx, force)) !== false ){
-				return this.wid.items()[idx];
+				return $(this.wid.items()[idx]);
 			}
 		},
 
@@ -910,7 +960,7 @@
 				ele,
 				idx = $$.getIndex(idx);
 			if ( idx !== false ){
-				ele = $("div." + $$.widgetFullName + ":first", $$.getContainer(idx));
+				ele = $("div." + $$.widgetFullName + ":first", $$.getContainer(idx)[0]);
 				if ( ele.length ){
 					return ele;
 				}
@@ -957,6 +1007,9 @@
         }
         else if (k === 'data'){
           $$.setData(obj[k], idx);
+        }
+        else if (k === 'disabled' && obj[k]){
+          $$.disable(idx);
         }
         // Color for IDE tabs
         else if (k === 'bcolor'){
@@ -1020,20 +1073,23 @@
           }
           else if (idx < $$.list.length) {
             $$.list.splice(idx, 0, obj);
-            $$.wid.insertBefore(kendoCfg, $$.getTab(idx));
+            $$.wid.insertBefore(kendoCfg, $$.getTab(idx)[0]);
           }
           else {
             throw new Error("Wrong tab index!");
           }
-
-          $tab = $($$.getTab(idx));
+          $$.wid.applyReorderable();
+          
+          $tab = $$.getTab(idx);
+          $$.checkTabsHeight(idx, true);
+          
           $closeBtn = $('<i/>').addClass(o.closeClass).click(function () {
             $$.close($(this).closest("li").index());
           });
           // Adding a close button is item is not static
-          $tab.addClass("with_button").append(
-            '<div class="ui-tabNav-tabSelected"> </div>',
-            $closeBtn
+          $tab.addClass("appui-tabNav-controls").append(
+            $('<div class="ui-tabNav-tabSelected"/>'),
+            $('<div class="ui-tabNav-icons"/>').append($closeBtn)
           );
           if ( obj.static ){
             $closeBtn.hide();
@@ -1046,7 +1102,7 @@
 
           // Indivual tabs' menu
           if ( menu ){
-            $$.buildMenu(obj, $tab);
+            $$.buildMenu(obj, $tab, idx);
           }
 				}
 				else{
@@ -1054,7 +1110,7 @@
         }
         if ( $$.list[idx] ){
           $$._setTab(obj, idx);
-          $($$.getContainer(idx)).addClass("appui-full-height");
+          $$.getContainer(idx).addClass("appui-full-height");
           return idx;
         }
 			}
@@ -1073,6 +1129,7 @@
 					cont = $$.getContainer(idx),
 					subtab = $$.getSubTabNav(idx),
 					res = 1,
+          $tab = $$.getTab(idx),
           currentURL = $$.getCurrentURL(idx);
 
 				if ( $.isFunction(o.beforeClose) ){
@@ -1084,7 +1141,7 @@
 					$.ui.tabNav.removeTabNav(subtab);
 				}
 				if ( ($$.list[idx].close !== undefined) && $.isFunction($$.list[idx].close) ) {
-					res = $$.list[idx].close(cont, $$.list[idx], idx);
+					res = $$.list[idx].close(cont[0], $$.list[idx], idx);
 				}
 				var cfg = $$.list[idx],
             after = false;
@@ -1094,6 +1151,7 @@
         _storageRemove($$.getFullURL(idx));
 				$$.list.splice(idx, 1);
 				$$.wid.remove(idx);
+        $$.checkTabsHeight(idx, true);
 				if ( after ) {
 					after(cfg, idx);
 				}
@@ -1133,16 +1191,16 @@
 		/********************* Tabs properties setters ***************************************/
 
 		disable: function(idx){
-			this.wid.disable(this.getTab(idx));
+			this.wid.disable(this.getTab(idx)[0]);
 		},
 
 		enable: function(idx){
-			this.wid.enable(this.getTab(idx));
+			this.wid.enable(this.getTab(idx)[0]);
 		},
 
     setContent: function(content, idx){
       if ( (idx = this.getIndex(idx)) !== false ){
-        $(this.getContainer(idx)).html(content);
+        this.getContainer(idx).html(content);
       }
       return this;
     },
@@ -1161,27 +1219,47 @@
 					title = appui.lng.untitled;
 				}
 				this.list[idx].title = title;
-				$(tab).children("span.k-link").html(title);
+				tab.children("span.k-link").html(title);
+        this.checkTabsHeight(idx);
 			}
 			return this;
 		},
+    
+    checkTabsHeight: function(idx, not_resize){
+		  var $$ = this,
+          h,
+          tab;
+      if ( $$.isValidIndex(idx) ){
+        tab = $$.getTab(idx);
+        h = tab.parent().outerHeight(true);
+        if ( $$.tabsHeight && (h !== $$.tabsHeight) ){
+          appui.fn.log("diff");
+          var $cont = $$.getContainer(idx);
+          $cont.add($cont.siblings("div")).removeClass("appui-tabnav-resized").each(function(){
+            $(this).find(".appui-tabnav-resized").removeClass("appui-tabnav-resized");
+          });
+          $$.resize(false, 1);
+        }
+        $$.tabsHeight = h;
+      }
+      return $$;
+    },
 
     setColorSelector: function(col, idx){
       if ( (idx = this.getIndex(idx)) !== false ) {
         var $$ = this,
           bcol,
           fcol,
-          tab = $$.getTab(idx),
-          $tab = $(tab);
+          tab = $$.getTab(idx);
         if (tab) {
           if (!$$.colorIsDone) {
-            $$.bThemeColor = $tab.css("backgroundColor");
-            $$.fThemeColor = $tab.css("color");
+            $$.bThemeColor = tab.css("backgroundColor");
+            $$.fThemeColor = tab.css("color");
           }
           if (!appui.fn.isColor(col)) {
             col = $$.fThemeColor;
           }
-          $("div.ui-tabNav-tabSelected", tab).css("backgroundColor", col);
+          $("div.ui-tabNav-tabSelected", tab[0]).css("backgroundColor", col);
           if (window.tinycolor) {
             if (!$$.colorIsDone) {
               $$.bColorIsLight = (tinycolor($$.bThemeColor)).isLight();
@@ -1196,9 +1274,8 @@
 		setColor: function(bcol, fcol, idx, dontSetSelector) {
       var $$ = this;
       if ( (idx = $$.getIndex(idx)) !== false ) {
-        var tab = $$.getTab(idx),
-            $tab = $(tab);
-        if (tab) {
+        var $tab = $$.getTab(idx);
+        if ( $tab.length ) {
           $tab.css("backgroundColor", appui.fn.isColor(bcol) ? bcol : null);
           $tab.children().not(".ui-tabNav-tabSelected").css("color", appui.fn.isColor(fcol) ? fcol : null);
           if ( !dontSetSelector ){
@@ -1215,7 +1292,7 @@
       if ( $$.isValidIndex(idx) ){
         // Change tab color if defined
         if ( $$.list[idx].bcolor && $$.list[idx].fcolor ) {
-          $($$.getTab(idx)).animate({
+          $$.getTab(idx).animate({
             backgroundColor: $$.list[idx].bColorAct
           }).children().not(".ui-tabNav-tabSelected").animate({
             color: $$.list[idx].fColorAct
@@ -1226,7 +1303,7 @@
         if ( $$.isValidIndex(oldSelected) && ($$.list[idx].url !== $$.getObs(oldSelected).url) ){
           if ( $$.list[oldSelected].bColor && $$.list[oldSelected].fColor ){
             //appui.fn.log($$.list[oldSelected].bColor +'/'+ $$.list[oldSelected].fColor);
-            $($$.getTab(oldSelected)).animate({
+            $$.getTab(oldSelected).animate({
               backgroundColor: $$.list[oldSelected].fColor
             }).children().not(".ui-tabNav-tabSelected").animate({
               color: $$.list[oldSelected].bColor
@@ -1244,12 +1321,18 @@
           o = $$.options;
 			idx = $$.getIndex(idx);
 			if ( idx !== false ) {
+			  var subtab = $$.getSubTabNav(idx);
+        if ( subtab.length ){
+          $.ui.tabNav.removeTabNav(subtab);
+        }
 				$$.setContent(' ', idx);
 				$$.list[idx] = {url: $$.list[idx].url, title: $$.list[idx].title};
 				var $cont = $$.getContainer(idx),
-					tab = $$.getTab(idx),
+					$tab = $$.getTab(idx),
 					fn;
-				$(tab).data("appui-tabnav-activated", 0);
+        $cont.removeData("appui-tabnav-w");
+        $cont.removeData("appui-tabnav-h");
+				$tab.data("appui-tabnav-activated", 0);
 				if ( $cont.length ){
 					fn  = $cont.data("appui-tabnav-callonce");
 				}
@@ -1266,11 +1349,14 @@
     reload: function(idx){
 		  var $$ = this;
 		  if ( (idx = $$.getIndex(idx)) !== false ){
-		    var url = $$.getFullBaseURL() + $$.list[idx].currentURL;
+		    var url = $$.getBaseURL() + $$.list[idx].currentURL;
+        appui.fn.log(url, $$.list[idx].currentURL);
         $$.reset(idx);
-        $$.setContent($.ui.tabNav.getLoader(), idx);
-        $$.loadContent(url);
+        $$.list[idx].load = true;
+        $$.getContainer
+        $$.activate(url, true);
       }
+      return $$;
     },
 
 		set: function(prop, val, idx){
@@ -1304,7 +1390,7 @@
 					}
 				}
 				if ( change && (idx === this.options.selected) ){
-					this.resize();
+					this.refresh();
 				}
 			}
 			return this;
@@ -1328,7 +1414,7 @@
 					}
 				}
 				if ( idx === this.options.selected ){
-					this.resize();
+					this.refresh();
 				}
 			}
 			return this;
@@ -1371,9 +1457,9 @@
 					var f = this.list[idx][name],
 						cont = $$.getContainer(idx);
 					$$.list[idx][name] = function(){
-						var r = f(cont, idx, $$.list[idx].data, $$);
+						var r = f(cont[0], idx, $$.list[idx].data, $$);
 						if ( r ){
-							return func(cont, idx, $$.list[idx].data, $$);
+							return func(cont[0], idx, $$.list[idx].data, $$);
 						}
 						return r;
 					}
@@ -1404,19 +1490,26 @@
 		/********************* Loading content ***************************************/
 
 		// Loads a remote content and injects it as a new tab
-		link: function(fullURL, force){
-      var $$ = this;
+		link: function(){
+      var $$ = this,
+          fullURL,
+          force,
+          data = {};
 			// Analyses the arguments
 			$.each(arguments, function(i, v){
 				if ( (typeof(v) === "boolean") ){
 					force = v ? true : false;
 				}
 				else if ( typeof(v) === "number" ){
+
           fullURL = v.toString();
 				}
-				else if ( typeof(v) === "string" ){
+        else if ( typeof(v) === "string" ){
           fullURL = v;
-				}
+        }
+        else if ( typeof(v) === "object" ){
+          data = v;
+        }
 			});
 			// if no URL we use the current one
 			if ( !fullURL ){
@@ -1429,32 +1522,33 @@
           // Strict index
           sidx = $$.search(url, true);
 
-			appui.fn.log("Method: link - line: 1407 - INDEX: " + idx + " - URL: " + url, $$.element);
+			//appui.fn.log("Method: link - line: 1407 - INDEX: " + idx + " - URL: " + url, $$.element);
 
 			if ( force ){
-        $$.loadContent(fullURL);
+        $$.loadContent(fullURL, data);
+        return;
       }
 			if ( idx != -1 ){
 				$$.activate(url, force);
         ele = $$.getSubTabNav(idx);
 				if ( ele.length && (sidx == -1) ){
-					appui.fn.log("LINK FN");
+					//appui.fn.log("LINK FN");
 					ele.tabNav("activate", $(ele).tabNav("parseURL", fullURL));
 					return;
 				}
 			}
 			else {
 				//appui.fn.log("loadContent FN: " + url);
-				$$.loadContent(fullURL);
+				$$.loadContent(fullURL, data);
 			}
 		},
 
-		loadContent: function(fullURL){
+		loadContent: function(fullURL, data){
 			var $$ = this,
-          change = false,
-          length = -1,
-          data = {};
-
+          length = -1;
+			if ( !data ) {
+        data = {};
+      }
       $.each($.ui.tabNav.globalList, function(i, v){
         if ( fullURL.indexOf(v) === 0 ){
           if ( v.length > length ){
@@ -1489,25 +1583,8 @@
       old_idx = $$.getIndex(old_idx),
       idx = $$.getIndex(idx);
 			if ( (old_idx !== false) && (idx !== false) && (idx !== old_idx) ){
-				var tab = $($$.getTab(old_idx)),
-					cont = $($$.getContainer(old_idx)),
-					ttab = $($$.getTab(idx)),
-					tcont = $($$.getContainer(idx)),
-					ptab = tab.parent(),
-					pcont = cont.parent();
-				//appui.fn.log(tab, cont, ptab, pcont, $$.wid);
 				var d = $$.list.splice(old_idx, 1);
 				$$.list.splice(idx, 0, d[0]);
-				if ( idx === $$.list.length ){
-					pcont.append(cont);
-					ptab.append(tab);
-					$$.list.push(d);
-				}
-				else {
-					tab.insertBefore(ttab);
-					cont.insertBefore(tcont);
-					$$.list.splice(old_idx < idx ? idx - 1 : idx, 0, d);
-				}
 			}
 			return $$;
 		},
@@ -1597,24 +1674,29 @@
 
 		/********************* MISC ***************************************/
 
-		buildMenu: function(obj, $tab){
+		buildMenu: function(obj, $tab, idx){
 			var $$ = this,
-				o = $$.options;
-			$tab.append(
+          o = $$.options;
+			$tab.find('.ui-tabNav-icons').append(
 				$('<i/>').addClass(o.menuClass).click(function (e) {
+				  e.stopImmediatePropagation();
 					var iEle = this,
 						$li,
 						$a,
 						menuEle,
 						$menu_ct = $('<ul/>').appendTo(document.body),
-						idx = $$.getIndex(obj.url),
-						ctx = [];
+						ctx = [/*{
+              text: appui.lng.arrange,
+              fn: function () {
+                $$.refresh();
+              }
+            }*/];
 					if ( $$.list[idx] !== undefined ) {
 						if ($$.list[idx].menu) {
 							ctx = $$.list[idx].menu;
 						}
 						if ($$.list[idx].menu !== false) {
-							if (!$$.list[idx].static) {
+							if ( !$$.list[idx].static || o.autoload ) {
 								ctx.push({
 									text: appui.lng.reload,
 									fn: function (i, ob) {
@@ -1627,7 +1709,7 @@
 										text: appui.lng.unpin,
 										fn: function (i, ob) {
 											$$.list[idx].pinned = false;
-											$($$.closeClassSelector, $$.getTab(idx)).show();
+											$($$.closeClassSelector, $$.getTab(idx)[0]).show();
 										}
 									});
 								}
@@ -1636,8 +1718,8 @@
 										text: appui.lng.pin,
 										fn: function (i, ob) {
 											$$.list[idx].pinned = true;
-											//appui.fn.log($($$.closeClassSelector, $$.getTab(idx)).length, $$.getTab(idx), $$.closeClassSelector);
-											$($$.closeClassSelector, $$.getTab(idx)).hide();
+											//appui.fn.log($($$.closeClassSelector, $$.getTab(idx)).length, $$.getTab(idx)[0], $$.closeClassSelector);
+											$($$.closeClassSelector, $$.getTab(idx)[0]).hide();
 										}
 									});
 									ctx.push({
@@ -1687,7 +1769,7 @@
 									$a.attr("href", v.url ? v.url : 'javascript:;');
 									if (v.fn && $.isFunction(v.fn)) {
 										$a.click(function () {
-											v.fn(idx, obj, $$.getContainer(idx));
+											v.fn(idx, obj, $$.getContainer(idx)[0]);
 										})
 									}
 								}
@@ -1724,31 +1806,72 @@
 			return false;
 		},
 
-		// Resize the tab content and the subtabs
-		resize: function(no_redraw){
-			if ( this.list[this.options.selected] ) {
-				var $$ = this,
-					o = $$.options,
-					idx = o.selected;
-				if ( !no_redraw ){
-          $$.wrapper.redraw();
+    // Resize the current tab content and the subtabs
+    resize: function(withoutSubtabs, force){
+      // Only on the currently selected tab (it must be visible)
+      if ( this.list[this.options.selected] !== undefined ){
+        var $$ = this,
+          o = $$.options,
+          subtab = $$.getSubTabNav(o.selected),
+          $cont = $$.getContainer(o.selected),
+          $tab = $$.getTab(o.selected),
+          isResized = false;
+        // We give this class when we resize
+        if ( !$tab.hasClass("appui-tabnav-resized") || force ){
+          force = 1;
+          $tab.siblings("li").addClass("appui-tabnav-resized");
+          this.refresh(force);
+          // From more general to more specific
+          if ( o.resize ){
+            o.resize($cont, $$.list[o.selected]);
+          }
+          if ( $.isFunction($$.list[o.selected].resize) ){
+            $$.list[o.selected].resize($cont, $$.list[o.selected]);
+          }
+          if ( subtab.length ){
+            if ( !withoutSubtabs || isResized ){
+              appui.fn.log("tabnav resize");
+              subtab.tabNav("resize", withoutSubtabs, force);
+            }
+          }
+          // General resize function comes executed only once by the last subtab
+          else if ( $.ui.tabNav.resize ){
+            appui.fn.log("global resize");
+            $.ui.tabNav.resize($cont, $$.list[o.selected]);
+          }
         }
+      }
+      return $$;
+    },
 
-				if ($.isFunction($$.list[idx].resize) ) {
-					$$.list[idx].resize(tab, $$.list[idx]);
-				}
-				/*
-				if (subtab.length > 0) {
-					subtab.tabNav("resize", tab, $$.list);
-				}
-				*/
-				if ( $.ui.tabNav.resize ){
-					$.ui.tabNav.resize($($$.getContainer(idx)), $$.list[idx]);
-				}
-				return 1;
-			}
-			return false;
-		},
+    // Resize the current tab content and the subtabs
+    refresh: function(force){
+      if ( this.list[this.options.selected] !== undefined ) {
+        if ( this.parent ){
+          return this.parent.tabNav("refresh");
+        }
+        var $$ = this,
+          o = $$.options,
+          $cont = $$.getContainer(o.selected),
+          ow = $cont.data("appui-tabnav-w"),
+          oh = $cont.data("appui-tabnav-h"),
+          w, h;
+        $cont.redraw(false, 1);
+        $(".appui-full-height,.appui-full-width", $cont).redraw(false, 1);
+        w = $cont.width();
+        h = $cont.height();
+
+        if ( force || (w !== ow) || (h !== oh) ) {
+          if ( $$.hasRedraw ){
+            //appui.fn.log("deep resize");
+            $cont.redraw();
+          }
+          $cont.data("appui-tabnav-w", $cont.width());
+          $cont.data("appui-tabnav-h", $cont.height());
+        }
+      }
+      return $$;
+    },
 
 		// Sets back the change parameter to true and cascade ascending
 		/** @todo Why?? */
@@ -1767,7 +1890,9 @@
         idx = $$.add(obj, idx);
         //appui.fn.log("NAV", idx, $$.list[idx], obj, "END");
         if ( idx !== false ){
-          return $$.activate($$.list[idx].currentURL ? $$.list[idx].currentURL : $$.list[idx].url, true);
+          var $cont = $($$.getContainer(idx));
+          $$.activate($$.list[idx].currentURL ? $$.list[idx].currentURL : $$.list[idx].url, true);
+          return $$;
         }
 			}
 			return false;
