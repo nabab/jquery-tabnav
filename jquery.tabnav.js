@@ -256,7 +256,6 @@
       $$.bColorIsLight = true;
       $$.fColorIsLight = false;
       $$.colorIsDone = false;
-      $$.hasRedraw = $.isFunction($.fn.redraw);
 			$$.closeClassSelector = "." + appui.fn.replaceAll(" ", ".", o.closeClass);
 			$$.menuClassSelector = "." + appui.fn.replaceAll(" ", ".", o.closeClass);
       $$.tabsHeight = 0;
@@ -321,14 +320,16 @@
 			$$.updateBaseURL(o.baseURL);
 
 			/** @var wid Instance of the tabstrip widget - Creation */
-			$$.wid = $$.element.addClass(this.widgetFullName).kendoReorderableTabStrip({
-				animation:false,
-				scrollable: o.scrollable ? { distance: 300 } : false,
-				tabPosition: o.tabPosition,
-				activate: function(e){
-          $$.onActivate(e.item);
-				}
-			}).data("kendoReorderableTabStrip");
+			$$.wid = $$.element
+        .addClass(this.widgetFullName)
+        .kendoReorderableTabStrip({
+          animation:false,
+          scrollable: o.scrollable ? { distance: 300 } : false,
+          tabPosition: o.tabPosition,
+          activate: function(e){
+            $$.onActivate(e.item);
+          }
+        }).data("kendoReorderableTabStrip");
 
 			// Adds to the list array of the tabNav instances
 			$.ui.tabNav.addTabNav($$.element);
@@ -748,6 +749,8 @@
 		onActivate: function(item){
 			var idx = $(item).index(),
 				$$ = this;
+      appui.fn.cssFullHeight(this.element);
+      appui.fn.log("onActivate", idx);
 			if ( $$.isLoaded ){
 				if ( $$.list[idx] && ($$.options.selected !== idx) ){
 					this.activate(this.list[idx].currentURL ? this.list[idx].currentURL : this.list[idx].url);
@@ -794,9 +797,9 @@
 
 			// if no parameter is passed we use the current url
 			var $$ = this,
-				o = $$.options,
-				idx
-        url = $$.parseURL(url);
+          o = $$.options,
+          idx,
+          url = $$.parseURL(url);
 			// either the requested url or the url corresponding to the target index
 
 			// No URL has been given -> we activate the default tab
@@ -838,7 +841,7 @@
 				oldSelected = o.selected,
 				// Previous "current url"
 				oldCurrent = $$.currentURL;
-
+      
 			// Do nothing if the tab is already activated and force is not true or the widget loads for the first time
 			if ( $tab.data("appui-tabnav-activated") && (!force || !$$.isLoaded) ){
         $$._urlActivation(url, idx, force);
@@ -870,7 +873,6 @@
 			if ( $$.list[idx].load ){
 			  //appui.fn.log("loading content from list load parameter");
 				$$.list[idx].load = false;
-        //$cont.redraw(1, 1);
         $$.setContent($.ui.tabNav.getLoader(), idx);
         $$.loadContent($$.getFullBaseURL() + url);
         return $$;
@@ -884,15 +886,17 @@
 				//appui.fn.log("Activation", url, $$.element);
 				// This is the only moment where selected is set
 				o.selected = idx;
+        
+        $tab.data("appui-tabnav-activated", 1).siblings().data("appui-tabnav-activated", 0);
 
 				//appui.fn.log("Ca marche..." + url);
 				if ( $.isFunction(o.activate) ){
 					o.activate($$.element, idx, $$);
 				}
-
-        $$.resize(false, force);
+        
+        appui.fn.redraw($cont, true);
         var resize = false;
-
+        
 				// If there is a callonce attached to this index we execute it and delete it
 				if ( $$.list[idx].callonce ) {
 				  //appui.fn.log("callonce", $$.list[idx].callonce.toString());
@@ -910,12 +914,11 @@
         $$._urlActivation(url, idx, force);
 
         if ( resize ){
-          $$.resize(!$tab.hasClass("appui-tabnav-resized"), 1);
+          appui.fn.redraw($cont, true);
         }
-
+        
         //$$.activateColor(idx, oldSelected);
 				//appui.fn.log("***COUNT****", $tab.length, $tab.siblings().length);
-				$tab.data("appui-tabnav-activated", 1).siblings().data("appui-tabnav-activated", 0);
 			}
 			else{
 			  throw new Error("NOT ACTIVATED WITH " + url);
@@ -1109,8 +1112,8 @@
 				  idx = newIndex;
         }
         if ( $$.list[idx] ){
-          $$._setTab(obj, idx);
           $$.getContainer(idx).addClass("appui-full-height");
+          $$._setTab(obj, idx);
           return idx;
         }
 			}
@@ -1200,7 +1203,10 @@
 
     setContent: function(content, idx){
       if ( (idx = this.getIndex(idx)) !== false ){
-        this.getContainer(idx).html(content);
+        if ( !this.isLoaded ){
+          appui.fn.analyzeContent(this.element);
+        }
+        appui.fn.insertContent(content, this.getContainer(idx));
       }
       return this;
     },
@@ -1235,9 +1241,6 @@
         if ( $$.tabsHeight && (h !== $$.tabsHeight) ){
           appui.fn.log("diff");
           var $cont = $$.getContainer(idx);
-          $cont.add($cont.siblings("div")).removeClass("appui-tabnav-resized").each(function(){
-            $(this).find(".appui-tabnav-resized").removeClass("appui-tabnav-resized");
-          });
           $$.resize(false, 1);
         }
         $$.tabsHeight = h;
@@ -1326,6 +1329,7 @@
           $.ui.tabNav.removeTabNav(subtab);
         }
 				$$.setContent(' ', idx);
+        appui.fn.log("setContent reset");
 				$$.list[idx] = {url: $$.list[idx].url, title: $$.list[idx].title};
 				var $cont = $$.getContainer(idx),
 					$tab = $$.getTab(idx),
@@ -1616,7 +1620,7 @@
 							idx = p;
 							p = idx.parent();
 						}
-						idx = p.length ? p.children("div[role=tabpanel]").index(idx) : -1;
+						idx = p.length ? p.children("div[role=tabpanel][id]").index(idx) : -1;
 					}
 				}
 				else if ( o.selected > -1 ){
@@ -1808,69 +1812,42 @@
 
     // Resize the current tab content and the subtabs
     resize: function(withoutSubtabs, force){
+      appui.fn.redraw(this.element);
       // Only on the currently selected tab (it must be visible)
       if ( this.list[this.options.selected] !== undefined ){
         var $$ = this,
           o = $$.options,
           subtab = $$.getSubTabNav(o.selected),
-          $cont = $$.getContainer(o.selected),
-          $tab = $$.getTab(o.selected),
-          isResized = false;
+          $cont = $$.getContainer(o.selected);
         // We give this class when we resize
-        if ( !$tab.hasClass("appui-tabnav-resized") || force ){
-          force = 1;
-          $tab.siblings("li").addClass("appui-tabnav-resized");
-          this.refresh(force);
-          // From more general to more specific
-          if ( o.resize ){
-            o.resize($cont, $$.list[o.selected]);
-          }
-          if ( $.isFunction($$.list[o.selected].resize) ){
-            $$.list[o.selected].resize($cont, $$.list[o.selected]);
-          }
-          if ( subtab.length ){
-            if ( !withoutSubtabs || isResized ){
-              appui.fn.log("tabnav resize");
-              subtab.tabNav("resize", withoutSubtabs, force);
-            }
-          }
-          // General resize function comes executed only once by the last subtab
-          else if ( $.ui.tabNav.resize ){
-            appui.fn.log("global resize");
-            $.ui.tabNav.resize($cont, $$.list[o.selected]);
+        this.refresh(force);
+        // From more general to more specific
+        if ( o.resize ){
+          o.resize($cont, $$.list[o.selected]);
+        }
+        if ( $.isFunction($$.list[o.selected].resize) ){
+          $$.list[o.selected].resize($cont, $$.list[o.selected]);
+        }
+        if ( subtab.length ){
+          if ( !withoutSubtabs || isResized ){
+            appui.fn.log("tabnav resize");
+            subtab.tabNav("resize", withoutSubtabs, force);
           }
         }
+        // General resize function comes executed only once by the last subtab
+        else if ( $.ui.tabNav.resize ){
+          $.ui.tabNav.resize($cont, $$.list[o.selected]);
+        }
       }
-      return $$;
+      return this;
     },
 
     // Resize the current tab content and the subtabs
     refresh: function(force){
-      if ( this.list[this.options.selected] !== undefined ) {
-        if ( this.parent ){
-          return this.parent.tabNav("refresh");
-        }
-        var $$ = this,
-          o = $$.options,
-          $cont = $$.getContainer(o.selected),
-          ow = $cont.data("appui-tabnav-w"),
-          oh = $cont.data("appui-tabnav-h"),
-          w, h;
-        $cont.redraw(false, 1);
-        $(".appui-full-height,.appui-full-width", $cont).redraw(false, 1);
-        w = $cont.width();
-        h = $cont.height();
-
-        if ( force || (w !== ow) || (h !== oh) ) {
-          if ( $$.hasRedraw ){
-            //appui.fn.log("deep resize");
-            $cont.redraw();
-          }
-          $cont.data("appui-tabnav-w", $cont.width());
-          $cont.data("appui-tabnav-h", $cont.height());
-        }
+      if ( this.list[this.options.selected] !== undefined ){
+        //appui.fn.redraw(this.getContainer(this.options.selected), 1);
       }
-      return $$;
+      return this;
     },
 
 		// Sets back the change parameter to true and cascade ascending
