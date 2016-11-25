@@ -223,7 +223,8 @@
 			// General callbacks
 			activate: false,
 			beforeClose: false,
-			transform: false,
+      transform: false,
+      afterLoad: false,
 			afterClose: false,
       resize: false,
 			// Widget options
@@ -458,18 +459,20 @@
 
         if ( content.length && (readonly_ids.length !== ids.length) ) {
 
-          if ( confirm($.ui.tabNav.lng.open_previous_tabs) ){
+          appui.fn.confirm(
+            $.ui.tabNav.lng.open_previous_tabs,
+            function(){
 
             // Opening restoration window
-            appui.fn.alert(
+            appui.fn.popup(
               '<div><input id="appui_tabnav_checkbox_all" class="k-checkbox" type="checkbox" value="1"><label class="k-checkbox-label" for="appui_tabnav_checkbox_all">' + $.ui.tabNav.lng.check_uncheck_all + '</label></div>' +
-              '<div class="appui-form-full">' + content + '</div>' +
+              '<div class="appui-form-full" style="min-width: 500px">' + content + '</div>' +
               '<div class="appui-c appui-form-full">' +
               '<button class="k-button"><i class="fa fa-check"> </i> OK</button>' +
               '<button class="k-button"><i class="fa fa-times"> </i> Cancel</button>' +
               '</div>',
-              "What to restore", 500, {actions: []}, function (cont) {
-                $("#appui_tabnav_checkbox_all").focus()
+              "What to restore", function (cont) {
+                
                 // JSTree creation
                 var $tree = cont.find(".appui-form-full:first");
                 $tree.fancytree({
@@ -503,6 +506,9 @@
                     }
                   });
                   toCheck = !toCheck;
+                });
+                $(".fancytree-title,.fancytree-icon", cont).click(function(){
+                  $(this).prevAll(".fancytree-checkbox").trigger("click");
                 });
 
                 // Click on confirm
@@ -545,7 +551,7 @@
                     }
                   };
                   loop(treeInst.rootNode.children, o.list);
-                  appui.fn.closeAlert();
+                  appui.fn.closePopup();
                   _storageInit(true);
                   $$._initialize();
                   return false;
@@ -553,17 +559,24 @@
 
                 // Click on cancel
                 cont.find("button.k-button:last").click(function () {
-                  appui.fn.closeAlert();
+                  appui.fn.closePopup();
                   _storageInit(true);
                   $$._initialize();
                   return false;
                 });
+                
+                setTimeout(function(){
+                  $("#appui_tabnav_checkbox_all", cont).focus();
+                }, 200);
               });
             return this;
-          }
-          else{
+          },
+            function(){
             _storageInit(true);
+            $$._initialize();
           }
+          );
+          return true;
         }
       }
       return false;
@@ -750,7 +763,6 @@
 			var idx = $(item).index(),
 				$$ = this;
       appui.fn.cssFullHeight(this.element);
-      appui.fn.log("onActivate", idx);
 			if ( $$.isLoaded ){
 				if ( $$.list[idx] && ($$.options.selected !== idx) ){
 					this.activate(this.list[idx].currentURL ? this.list[idx].currentURL : this.list[idx].url);
@@ -874,7 +886,7 @@
 			  //appui.fn.log("loading content from list load parameter");
 				$$.list[idx].load = false;
         $$.setContent($.ui.tabNav.getLoader(), idx);
-        $$.loadContent($$.getFullBaseURL() + url);
+        $$.loadContent($$.getFullBaseURL() + url, false, $$.list[idx]);
         return $$;
 			}
 			// Only if either:
@@ -1239,7 +1251,6 @@
         tab = $$.getTab(idx);
         h = tab.parent().outerHeight(true);
         if ( $$.tabsHeight && (h !== $$.tabsHeight) ){
-          appui.fn.log("diff");
           var $cont = $$.getContainer(idx);
           $$.resize(false, 1);
         }
@@ -1318,6 +1329,26 @@
       }
       return this;
     },
+    
+    getReloadList: function(idx){
+      if ( this.isValidIndex(idx) ){
+        var $$ = this,
+            subtab = $$.getSubTabNav(idx),
+            it = $$.list[idx];
+        if ( subtab.length ){
+          var num = subtab.tabNav("getLength");
+          it.list = [];
+          for ( var i = 0; i < num; i++ ){
+            it.list.push(subtab.tabNav("getReloadList", i));
+          }
+        }
+        it.content = ' ';
+        return it;
+      }
+      else{
+        throw new Error("The index provided (" + idx.toString() + ") is incorrect");
+      }
+    },
 
 		reset: function(idx, with_title){
 			var $$ = this,
@@ -1329,8 +1360,8 @@
           $.ui.tabNav.removeTabNav(subtab);
         }
 				$$.setContent(' ', idx);
-        appui.fn.log("setContent reset");
-				$$.list[idx] = {url: $$.list[idx].url, title: $$.list[idx].title};
+        appui.fn.log($$.getReloadList(idx));
+				$$.list[idx] = $$.getReloadList(idx);
 				var $cont = $$.getContainer(idx),
 					$tab = $$.getTab(idx),
 					fn;
@@ -1341,7 +1372,6 @@
 					fn  = $cont.data("appui-tabnav-callonce");
 				}
 				if ( fn ){
-					$$.list[idx].callonce = fn;
 					$cont.removeData("appui-tabnav-callonce");
 				}
 				if ( with_title ) {
@@ -1357,7 +1387,6 @@
         appui.fn.log(url, $$.list[idx].currentURL);
         $$.reset(idx);
         $$.list[idx].load = true;
-        $$.getContainer
         $$.activate(url, true);
       }
       return $$;
@@ -1547,11 +1576,14 @@
 			}
 		},
 
-		loadContent: function(fullURL, data){
+		loadContent: function(fullURL, data, obj){
 			var $$ = this,
           length = -1;
-			if ( !data ) {
+      if ( !data ) {
         data = {};
+      }
+      if ( !obj ) {
+        obj = {};
       }
       $.each($.ui.tabNav.globalList, function(i, v){
         if ( fullURL.indexOf(v) === 0 ){
@@ -1561,19 +1593,19 @@
           }
         }
       });
-			appui.fn.post(fullURL, data, function(obj){
-				if ( obj && obj.content ){
-          if ( !obj.url ){
-            obj.url = fullURL;
+			appui.fn.post(fullURL, data, function(d){
+				if ( d && d.content ){
+          if ( !d.url ){
+            d.url = fullURL;
           }
-          obj.url = $$.parseURL(obj.url);
+          d.url = $$.parseURL(d.url);
           var url = $$.parseURL(fullURL);
-          if ( !obj.current && (obj.url !== url) ){
-            obj.current = url;
+          if ( !d.current && (d.url !== url) ){
+            d.current = url;
           }
           //appui.fn.log("LOAD", obj.url, fullURL);
 					/** @todo shouldn't the subtab load also if the remaining url is not empty */
-					$$.navigate(obj);
+					$$.navigate($.extend(obj, d), $$.getList().length, true);
 				}
 			});
 		},
@@ -1830,13 +1862,14 @@
         }
         if ( subtab.length ){
           if ( !withoutSubtabs || isResized ){
-            appui.fn.log("tabnav resize");
             subtab.tabNav("resize", withoutSubtabs, force);
           }
         }
         // General resize function comes executed only once by the last subtab
-        else if ( $.ui.tabNav.resize ){
-          $.ui.tabNav.resize($cont, $$.list[o.selected]);
+        else{
+          if ( $.ui.tabNav.resize ){
+            $.ui.tabNav.resize($cont, $$.list[o.selected]);
+          }
         }
       }
       return this;
@@ -1860,14 +1893,17 @@
 			return false;
 		},
 
-		navigate: function(obj, idx){
+		navigate: function(obj, idx, load){
 			var $$ = this,
 				o = $$.options;
 			if ( obj.url ) {
         idx = $$.add(obj, idx);
         //appui.fn.log("NAV", idx, $$.list[idx], obj, "END");
         if ( idx !== false ){
-          var $cont = $($$.getContainer(idx));
+          if ( load && o.afterLoad ){
+            var $cont = $($$.getContainer(idx));
+            o.afterLoad($cont, $$);
+          }
           $$.activate($$.list[idx].currentURL ? $$.list[idx].currentURL : $$.list[idx].url, true);
           return $$;
         }
